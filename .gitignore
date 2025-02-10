@@ -1,0 +1,5 @@
+# Ignore dependencies
+node_modules/
+
+# Ignore Jest cache and test coverage reports
+coverage/
