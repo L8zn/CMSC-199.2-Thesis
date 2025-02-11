@@ -4,25 +4,18 @@ Defines mapping strategies that the mapper module uses to convert RDLT vertices 
 
 // utils/strategy.js
 export function basicMappingStrategy(vertex) {
-    // Map a vertex to a basic Petri Net element.
-    return {
-      type: vertex.type === 'controller' ? 'transition' : 'place',
-      options: {
-        id: vertex.id,
-        label: vertex.label || ''
-      }
+  // For controllers ('c'), map to a transition.
+  // For boundary ('b') and entity ('e') objects, map to a place.
+  if (vertex.type === 'c') {
+    return { 
+      type: 'transition', 
+      options: { id: vertex.id, label: vertex.label } 
+    };
+  } else {
+    return { 
+      type: 'place', 
+      options: { id: vertex.id, label: vertex.label, tokens: 0 } 
     };
   }
-  
-  export function guardedMappingStrategy(vertex) {
-    // Map a vertex to a Petri Net transition with guard conditions.
-    return {
-      type: 'transition',
-      options: {
-        id: vertex.id,
-        label: vertex.label || '',
-        guard: vertex.guard || null
-      }
-    };
-  }
+}
   

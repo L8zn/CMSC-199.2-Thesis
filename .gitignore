@@ -1,5 +1,24 @@
 # Ignore dependencies
 node_modules/
+package-lock.json
 
 # Ignore Jest cache and test coverage reports
 coverage/
+
+# Ignore editor and OS-specific files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Ignore logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ignore build artifacts
+dist/
+build/
+
+# Ignore outputs
+diagrams/

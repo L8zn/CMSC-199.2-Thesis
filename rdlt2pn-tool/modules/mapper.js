@@ -3,37 +3,54 @@ This module maps the parsed RDLT model to a Petri Net. It demonstrates using bot
 */
 
 // modules/mapper.js
+import { createEmptyPN } from '../petriNetModel.js';
 import { createElement } from '../utils/factory.js';
-import { basicMappingStrategy, guardedMappingStrategy } from '../utils/strategy.js';
+import { basicMappingStrategy } from '../utils/strategy.js';
 
 export function mapToPetriNet(model) {
-  // Create an empty Petri Net model
-  const petriNet = {
-    places: [],
-    transitions: [],
-    arcs: []
-  };
+  const petriNet = createEmptyPN();
 
-  // Example: iterate over vertices to create corresponding PN elements.
+  // Map vertices to PN elements.
   if (model.vertices) {
     model.vertices.forEach(vertex => {
-      let mappedElement;
-      // Choose mapping strategy based on vertex attributes
-      if (vertex.type === 'controller') {
-        mappedElement = guardedMappingStrategy(vertex);
-      } else {
-        mappedElement = basicMappingStrategy(vertex);
-      }
-      // Create an element using the factory.
-      const pnElement = createElement(mappedElement.type, mappedElement.options);
+      // Always use the basicMappingStrategy:
+      const mapping = basicMappingStrategy(vertex);
+      const pnElement = createElement(mapping.type, mapping.options);
       if (pnElement.type === 'place') {
         petriNet.places.push(pnElement);
       } else if (pnElement.type === 'transition') {
         petriNet.transitions.push(pnElement);
       }
-      // Extend to edges and arcs as needed...
     });
   }
-  
+
+  // Map edges to PN arcs.
+  if (model.edges) {
+    model.edges.forEach(edge => {
+      // Create the arc object including C, L, and initialize T as an array of zeros.
+      const arc = {
+        from: edge.from,
+        to: edge.to,
+        // Use the provided constraint symbol from edge.C if available,
+        // or fall back to a property in edge.constraints (if defined),
+        // or default to ε (i.e., no constraint).
+        C: edge.C || (edge.constraints && edge.constraints.constraint) || 'ε',
+        L: edge.L || 1,
+        T: Array(edge.L || 1).fill(0)
+      };
+
+      // Mark the arc as 'reset' if the source vertex is reset-bound (M = 1).
+      const sourceVertex = model.vertices.find(v => v.id === edge.from);
+      arc.type = (sourceVertex && sourceVertex.M === 1) ? 'reset' : 'normal';
+
+      petriNet.arcs.push(arc);
+    });
+  }
+
+  // Initialize markings: set each place's token count from its options.
+  petriNet.places.forEach(place => {
+    petriNet.marking[place.options.id] = place.options.tokens || 0;
+  });
+
   return petriNet;
 }
