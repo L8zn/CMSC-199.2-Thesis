@@ -21,4 +21,4 @@ dist/
 build/
 
 # Ignore outputs
-diagrams/
+outputs/
