@@ -20,5 +20,6 @@ yarn-error.log*
 dist/
 build/
 
-# Ignore outputs
+# Ignore local files
 outputs/
+notes/
