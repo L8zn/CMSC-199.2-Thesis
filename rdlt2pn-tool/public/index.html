@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RDLT to Petri Net Converter</title>
+  <!-- Load D3 and d3-graphviz via CDN -->
+  <script src="https://d3js.org/d3.v7.js"></script>
+  <script src="https://unpkg.com/@hpcc-js/wasm@2.16.1/dist/graphviz.umd.js"></script>
+  <script src="https://unpkg.com/d3-graphviz@5/build/d3-graphviz.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 80%; height: 150px; }
+    pre { background: #f4f4f4; padding: 10px; }
+    .section { margin-bottom: 20px; }
+    button { margin: 5px 0; }
+    .graph {
+      /* however big you want it to be: */
+      width: 100%;     /* full width of parent */
+      height: 400px;   /* or 100% of parent, etc. */
+      border: 1px solid #ccc;
+      /* optional: make it responsive */
+      resize: vertical;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <h1>RDLT to Petri Net Converter</h1>
+  
+  <div class="section">
+    <h2>JSON RDLT Input</h2>
+    <textarea id="jsonInput" placeholder="Paste JSON RDLT input here...">
+      {
+        "vertices": [
+          { "id": "x1", "type": "b", "label": "x1", "M": 0 },
+          { "id": "y1", "type": "c", "label": "y1", "M": 0 },
+          { "id": "y2", "type": "c", "label": "y2", "M": 0 },
+          { "id": "y3", "type": "c", "label": "y3", "M": 0 },
+          { "id": "x2", "type": "e", "label": "x2", "M": 1 },
+          { "id": "y4", "type": "c", "label": "y4", "M": 0 },
+          { "id": "y5", "type": "c", "label": "y5", "M": 0 }
+        ],  
+        "edges": [
+          { "from": "x1", "to": "y1", "C": "a", "L": 1 },
+          { "from": "x1", "to": "y2", "C": "b", "L": 1 },
+          { "from": "y2", "to": "y3", "C": "d", "L": 1 },
+          { "from": "y1", "to": "x2", "C": "ϵ", "L": 2 },
+          { "from": "y2", "to": "x2", "C": "send m", "L": 2 },   
+          { "from": "x2", "to": "y5", "C": "ϵ", "L": 1 },
+          { "from": "x2", "to": "y4", "C": "ϵ", "L": 1 },
+          { "from": "y4", "to": "y5", "C": "ϵ", "L": 1 },
+          { "from": "y5", "to": "y3", "C": "send n, p", "L": 1 }
+        ]
+      }
+    </textarea>
+  </div>
+  
+  <button id="convertBtn">Convert</button>
+  
+  <div id="outputSection" class="section" style="display:none;">
+    <h2>Visualization</h2>
+    <h3>Input RDLT</h3>
+    <div id="inputRDLT" class="graph"></div>
+    <h3>Preprocessed RDLT</h3>
+    <div id="preproRDLT" class="graph"></div>
+    <h3>Output PN</h3>
+    <div id="outputPN" class="graph"></div>
+    <h2>Generated Petri Net Model (DOT Format)</h2>
+    <pre id="dotOutput"></pre>
+    <div>
+      <button class="exportBtn" data-format="svg">Export as SVG</button>
+      <button class="exportBtn" data-format="png">Export as PNG</button>
+      <button class="exportBtn" data-format="xml">Export as Petriflow XML</button>
+    </div>
+  </div>
+  
+  <div id="reportSection" class="section" style="display:none;">
+    <h2>Structural & Behavioral Analysis Report</h2>
+    <pre id="reportOutput"></pre>
+  </div>
+  
+  <script>
+    // When the Convert button is clicked, send a POST request to /api/convert.
+    document.getElementById('convertBtn').addEventListener('click', () => {
+      const jsonInput = document.getElementById('jsonInput').value;
+      fetch('/api/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: jsonInput })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          alert("Conversion failed: " + data.error);
+          return;
+        }
+        document.getElementById('dotOutput').textContent = data.pnDot;
+        document.getElementById('reportOutput').textContent = data.report;
+        document.getElementById('outputSection').style.display = 'block';
+        document.getElementById('reportSection').style.display = 'block';
+
+        renderGraph(data.rdltDot,   "inputRDLT");
+        renderGraph(data.preproDot, "preproRDLT");
+        renderGraph(data.pnDot,     "outputPN");
+      })
+      .catch(err => {
+        console.error('Fetch/convert error:', err);
+      });
+    });
+
+    // Function to render the DOT string using d3-graphviz.
+    function renderGraph(dot, id) {
+      const container = d3.select(`#${id}`);
+      container.html("");  // clear old graph
+
+      container
+        .graphviz({ useWorker: false })
+        .renderDot(dot)
+        .on("end", () => {
+          console.log(`Graph "${id}" rendered successfully.`);
+          // select the newly‐inserted <svg> and make it fill the div:
+          const svg = container.select("svg");
+
+          // Setup zoom and pan
+          const zoom = d3.zoom().on("zoom", (event) => {
+            svg.select('g').attr('transform', event.transform);
+          });
+
+          svg.call(zoom);
+
+          // Make SVG responsive
+          svg.attr("width", "100%")
+            .attr("height", "100%")
+            .attr("preserveAspectRatio", "xMidYMid meet");
+            
+        })
+        // .on("error", (e) => console.error(`Graph "${id}" render error:`, e));
+    }
+
+
+
+    // Export functionality: downloads the DOT text as a file.
+    function handleExport(format) {
+      const dotText = document.getElementById('dotOutput').textContent;
+      const blob = new Blob([dotText], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `pn_model.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    // Attach event listeners to export buttons.
+    const exportButtons = document.querySelectorAll('.exportBtn');
+    exportButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const format = btn.getAttribute('data-format');
+        handleExport(format);
+      });
+    });
+  </script>
+</body>
+</html>

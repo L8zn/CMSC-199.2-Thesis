@@ -33,38 +33,32 @@ export class RDLTModel {
     return this.nodes[id];
   }
 
-  // Method to check if a node has an incoming arc with C = "ϵ"
-  hasIncomingEpsilonEdge(id) {
-    const node = this.getNode(id);
-    if (!node) return false; // Node doesn't exist
-    return node.incoming.some(edge => edge.C === "ϵ");
-  }
+  /**
+   * Returns the set of vertices that belong to the RBS induced by the given center nodeId.
+   * According to Malinao 2023, vertices belonging to the RBS are:
+   *  - The center node itself (nodeId)
+   *  - Plus all nodes directly connected from the center by an epsilon ("ϵ") edge.
+   *
+   * @param {string} centerId - The node ID of the RBS center.
+   * @returns {Array<string>} - An array of node IDs belonging to the RBS.
+   */
+  getVerticesInRBS(centerId) {
+    const centerNode = this.getNode(centerId);
+    if (!centerNode) return [];
 
-  // Get the neighbor node IDs via outgoing epsilon ("ϵ") edges.
-  getEpsilonNeighbors(nodeId) {
-    const node = this.getNode(nodeId);
-    if (!node) return [];
-    return node.outgoing.filter(edge => edge.C === "ϵ").map(edge => edge.to);
-  }
+    const rbsVertices = new Set();
+    rbsVertices.add(centerId); // The center node always belongs to the RBS
 
-  // Perform a BFS over epsilon edges (where C === "ϵ") starting from startId.
-  // Returns an array of node IDs reachable from startId (including startId).
-  bfsEpsilon(startId) {
-    const visited = new Set();
-    const queue = [startId];
-    visited.add(startId);
-    while (queue.length > 0) {
-      const current = queue.shift();
-      const neighbors = this.getEpsilonNeighbors(current);
-      for (const neighborId of neighbors) {
-        if (!visited.has(neighborId)) {
-          visited.add(neighborId);
-          queue.push(neighborId);
-        }
+    // Find immediate outgoing epsilon edges from the center
+    centerNode.outgoing.forEach(edge => {
+      if (edge.C === "ϵ") {
+        rbsVertices.add(edge.to);
       }
-    }
-    return Array.from(visited);
+    });
+
+    return Array.from(rbsVertices);
   }
+
 
   // Reset the M attribute to 0 for all nodes in the model.
   resetMForNodes() {
@@ -166,40 +160,55 @@ export class RDLTModel {
   }
 
   /**
-   * Static helper: Determines if an array of processes (each a list of node IDs) are siblings.
-   * Sibling processes must have the same start and end, and their edge sets (as "from-to" strings)
-   * must be disjoint.
-   * @param {Array<Array<string>>} processes - Array of processes.
-   * @returns {boolean} True if the processes are siblings.
-   */
-  static areSiblingProcesses(processes) {
-    if (processes.length < 2) return false;
-    const start = processes[0][0];
-    const end = processes[0][processes[0].length - 1];
-    for (const proc of processes) {
-      if (proc[0] !== start || proc[proc.length - 1] !== end) {
-        return false;
-      }
+ * Static helper: Determines if there exists at least one sibling pair
+ * among an array of processes.  A sibling pair is two processes that
+ * share the same start and end nodes and have disjoint edge sets.
+ *
+ * @param {Array<Array<string>>} processes - Array of processes
+ * @returns {boolean} True if at least one pair are siblings
+ */
+static hasAnySiblingPair(processes) {
+  const n = processes.length;
+  if (n < 2) return false;
+
+  // Precompute each process's start, end, and edgeSet
+  const meta = processes.map(proc => {
+    const start = proc[0];
+    const end = proc[proc.length - 1];
+    const edgeSet = new Set();
+    for (let i = 0; i + 1 < proc.length; i++) {
+      edgeSet.add(`${proc[i]}-${proc[i + 1]}`);
     }
-    const getEdgeSet = (proc) => {
-      const s = new Set();
-      for (let i = 0; i < proc.length - 1; i++) {
-        s.add(`${proc[i]}-${proc[i + 1]}`);
-      }
-      return s;
-    };
-    const edgeSets = processes.map(getEdgeSet);
-    for (let i = 0; i < edgeSets.length; i++) {
-      for (let j = i + 1; j < edgeSets.length; j++) {
-        for (const edge of edgeSets[i]) {
-          if (edgeSets[j].has(edge)) {
-            return false;
+    return { start, end, edgeSet };
+  });
+
+  // Check every pair (i,j)
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      // same start & end?
+      if (
+        meta[i].start === meta[j].start &&
+        meta[i].end   === meta[j].end
+      ) {
+        // are their edge sets disjoint?
+        let disjoint = true;
+        for (const e of meta[i].edgeSet) {
+          if (meta[j].edgeSet.has(e)) {
+            disjoint = false;
+            break;
           }
+        }
+        if (disjoint) {
+          // found one valid sibling pair
+          return true;
         }
       }
     }
-    return true;
   }
+
+  // no qualifying pair found
+  return false;
+}
 
   /**
    * Checks if a node qualifies as an OR-join.
@@ -225,10 +234,11 @@ export class RDLTModel {
     const candidateOrJoinVertices = Object.values(this.nodes).filter(n => {
       return this.isOrJoin(n) && this.isReachable(vertex.id, n.id);
     });
+    // console.log(candidateOrJoinVertices);
     if (candidateOrJoinVertices.length === 0) return false;
     for (const joinVertex of candidateOrJoinVertices) {
       const processes = this.getElementaryPathsBetween(vertex.id, joinVertex.id);
-      if (processes.length >= 2 && RDLTModel.areSiblingProcesses(processes)) {
+      if (processes.length >= 2 && RDLTModel.hasAnySiblingPair(processes)) {
         return true;
       }
     }
@@ -250,7 +260,7 @@ export class RDLTModel {
     if (candidateJoinVertices.length === 0) return true;
     for (const joinVertex of candidateJoinVertices) {
       const processes = this.getElementaryPathsBetween(vertex.id, joinVertex.id);
-      if (processes.length >= 2 && RDLTModel.areSiblingProcesses(processes)) {
+      if (processes.length >= 2 && RDLTModel.hasAnySiblingPair(processes)) {
         return false;
       }
     }
@@ -309,8 +319,8 @@ export class RDLTModel {
     const siblings = this.hasSiblingsWithORJoinMergePoint(vertex);
     const nonSiblings = this.hasNonSiblingPaths(vertex);
     const hasAbstract = this.hasAbstractArc(vertex);
-    const hasLoop = this.hasCycle(vertex);
-    console.log(`${vertex.id}: siblings=${siblings}, nonSiblings=${nonSiblings}, abstract=${hasAbstract}, loop=${hasLoop}`);
+    const hasLoop = this.hasLoopingArc(vertex.id);
+    console.log(`${vertex.id}: siblingsOrJoin=${siblings}, nonSiblings=${nonSiblings}, abstract=${hasAbstract}, loop=${hasLoop}`);
     return siblings || nonSiblings || hasAbstract || hasLoop;
   }
 

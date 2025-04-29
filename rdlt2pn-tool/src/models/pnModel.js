@@ -1,10 +1,13 @@
 export class PNModel {
   constructor() {
-    // Use dictionaries to store places and transitions for easy lookup.
+    // Dictionary of places and transitions keyed by their id.
     this.places = {};
     this.transitions = {};
     // Array of arcs.
     this.arcs = [];
+    this.vertexLabelMap = {}; // will hold rdlt vertex id → rdlt vertex label
+    this.constraintMap = {};     // will hold original → short
+    this.__nextConstraintId = 0;  // private counter
   }
 
   // Add a place to the Petri Net.
@@ -110,6 +113,70 @@ export class PNModel {
     return model;
   }
 
+  nextShort() {
+    // cycle through A…Z, then A1…Z1, etc.
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let n = this.__nextConstraintId++;
+    const prefix = letters[n % letters.length];
+    const suffix = Math.floor(n / letters.length) || "";
+    return prefix + suffix;
+  }
+
+  // private helper to pull the set of all already‑used short names
+  _usedShorts() {
+    return new Set(Object.values(this.constraintMap));
+  }
+
+  // private: try to find an unused lowercase letter a..z
+  _nextUnusedLetter() {
+    const used = this._usedShorts();
+    // ASCII 97 = 'a'
+    for (let i = 0; i < 26; i++) {
+      const letter = String.fromCharCode(97 + i); // now 'a','b',…,'z'
+      if (!used.has(letter)) return letter;
+    }
+    return null;
+  }
+
+  // private: once a..z are gone, generate a1,b1,…,z1,a2… etc
+  _nextFallback() {
+    const used = this._usedShorts();
+    // switch to lowercase letters here:
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    while (true) {
+      const idx = this.__nextCounter++;
+      const letter = letters[idx % 26];
+      const suffix = Math.floor(idx / 26);
+      const candidate = suffix === 0
+        ? letter
+        : letter + suffix;
+      if (!used.has(candidate)) return candidate;
+    }
+  }
+
+  getShortConstraint(orig) {
+    if (this.constraintMap[orig]) return this.constraintMap[orig];
+
+    const used = this._usedShorts();
+    let short;
+
+    // if orig is single‐letter, use it lowercased (if still free)
+    if (/^[A-Za-z]$/.test(orig)) {
+      const candidate = orig.toLowerCase();
+      if (!used.has(candidate)) {
+        short = candidate;
+      }
+    }
+
+    // otherwise or if that letter was already taken
+    if (!short) {
+      short = this._nextUnusedLetter() || this._nextFallback();
+    }
+
+    this.constraintMap[orig] = short;
+    return short;
+  }
+  
   // Insert a new node (newNodeId) on a single arc (first matching arc)
   // that goes from sourceId to targetId.
   insertNodeOnArc(sourceId, targetId, newNodeId) {
@@ -150,18 +217,27 @@ export class PNModel {
   // This method removes all arcs with to === targetId,
   // adds an arc from newNodeId to targetId,
   // then reattaches each removed arc from its original source to newNodeId.
-  insertNodeOnIncomingArcs(targetId, newNodeId) {
-    // Get all incoming arcs to targetId.
-    const incomingArcs = this.arcs.filter(arc => arc.to === targetId);
+  // The optional parameter `constraint` filters arcs with the same constraint value.
+  insertNodeOnIncomingArcs(targetId, newNodeId, onlySigmaArcs = false, incomingEpsilonEdges=[]) {
+    // Get all incoming arcs to targetId, optionally filtered by the constraint.
+    let incomingArcs = this.arcs.filter(arc => arc.to === targetId);
+    if (onlySigmaArcs) {
+      // build a set of names to exclude
+      const excludeFroms = new Set(
+        incomingEpsilonEdges.map(eps => `T${eps.from}`)
+      );
+      incomingArcs = incomingArcs.filter(arc => !excludeFroms.has(arc.from));
+    }
     // Remove these arcs from the model.
     for (const arc of incomingArcs) {
-      this.removeArc(arc);
+        this.removeArc(arc);
     }
     // Create an arc from newNodeId to targetId.
     this.addArc({ from: newNodeId, to: targetId, type: "normal" });
     // Reattach every removed arc: source now goes to newNodeId.
     for (const arc of incomingArcs) {
-      this.addArc({ from: arc.from, to: newNodeId, type: arc.type });
+        this.addArc({ from: arc.from, to: newNodeId, type: arc.type, C: arc.C });
     }
   }
+
 }

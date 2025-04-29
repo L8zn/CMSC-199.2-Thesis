@@ -4,263 +4,433 @@ import path from 'path';
 import { exec } from 'child_process';
 
 /**
- * Generates a DOT representation for an RDLT model using the new JSON structure.
+ * Exports an RDLT model as a DOT string.
  *
- * This version identifies reset-bound subsystems (RBS) by:
- *  - Finding center vertices (where M === 1).
- *  - Collecting vertices that are connected to the center via epsilon-constrained (ϵ) arcs.
- *    (An edge is considered epsilon-constrained if its C attribute is missing or equal to "ε" or "ϵ".)
+ * This function identifies reset-bound subsystems (RBS) using the
+ * model's built-in getVerticesInRBS(centerId) method:
+ *  - For each vertex with M === 1 (RBS center), it gets the members of its RBS.
+ *    (According to Malinao's paper, an RBS contains the center node plus all nodes
+ *     immediately reachable via an epsilon ("ϵ") edge.)
+ *  - It then renders such vertices inside a subgraph cluster labeled with the center's label.
  *
- * Vertices in an RBS are rendered within a subgraph cluster labeled with the center vertex's label.
- * The center vertex's label is formatted as "<vertex_label>\nM(.)=1".
+ * @param {RDLTModel} rdltModel - An instance of the RDLTModel class.
+ * @returns {string} A DOT representation of the RDLT model.
  */
-export function generateRDLTDOT(rdltModel) {
-  // Helper function: Replace any apostrophe in a node id with "prime"
+export function exportRDLTToDOT(rdltModel) {
+  // Helper to replace apostrophes in node IDs.
   function sanitizeId(id) {
     return id.replace(/'/g, "prime");
   }
 
-  let dot = 'digraph RDLT {\n';
-  dot += '  rankdir=LR;\n';
-  dot += '  node [fontname="Helvetica", shape=none, fixedsize=true, width=1.5, height=1.5];\n';
-
-  // Build a map for quick lookup of vertices by id.
-  const vertexMap = {};
-  rdltModel.vertices.forEach(v => {
-    vertexMap[v.id] = v;
-  });
-
-  // Helper function: returns true if an edge's C attribute is considered epsilon.
-  function isEpsilon(edge) {
-    return (!edge.C || edge.C === 'ε' || edge.C === 'ϵ');
+  // Helper to create an HTML-like label for a vertex.
+  function getHTMLLabel(vertex) {
+    if (vertex.type === 'c') {
+      return `<TABLE BORDER="0" CELLSPACING="0">
+  <TR><TD BORDER="0" COLSPAN="3"> </TD></TR>
+  <TR><TD BORDER="1" SIDES="BL" HEIGHT="11"></TD>
+    <TD BORDER="0" COLSPAN="2" WIDTH="15"></TD></TR>
+  <TR><TD BORDER="0" WIDTH="33" HEIGHT="25" COLSPAN="3" VALIGN="TOP" FIXEDSIZE="TRUE">${vertex.id}</TD></TR>
+  <TR><TD BORDER="0" COLSPAN="3" WIDTH="33" HEIGHT="22" FIXEDSIZE="TRUE">${vertex.label}</TD></TR>
+</TABLE>`;
+    } else if (vertex.type === 'b') {
+      return `<TABLE BORDER="0" CELLSPACING="0">
+  <TR><TD BORDER="0" COLSPAN="5"> </TD></TR>
+  <TR><TD BORDER="1" SIDES="R" ROWSPAN="2"></TD><TD BORDER="1" SIDES="B"></TD>
+    <TD HEIGHT="35" BORDER="0" WIDTH="39" ROWSPAN="2" FIXEDSIZE="TRUE">${vertex.id}</TD>
+    <TD BORDER="0" ROWSPAN="2"></TD><TD BORDER="0" ROWSPAN="2"></TD></TR>
+  <TR><TD SIDES="T"></TD></TR>
+  <TR><TD BORDER="0" COLSPAN="5" WIDTH="33" HEIGHT="22" FIXEDSIZE="TRUE">${vertex.label}</TD></TR>
+</TABLE>`;
+    } else if (vertex.type === 'e') {
+      return `<TABLE BORDER="0" CELLSPACING="0">
+  <TR><TD BORDER="0"> </TD></TR>
+  <TR><TD HEIGHT="38" BORDER="1" WIDTH="30" SIDES="B" FIXEDSIZE="TRUE">${vertex.id}</TD></TR>
+  <TR><TD BORDER="0" WIDTH="33" HEIGHT="22" FIXEDSIZE="TRUE">${vertex.label}</TD></TR>
+</TABLE>`;
+    }
+    return vertex.label;
   }
 
-  // Set to keep track of vertices that have been assigned to an RBS.
-  const rbsAssigned = new Set();
-  const rbsClusters = []; // Each element: { center: vertex, members: Set of vertex ids }
+  let dot = 'digraph RDLT {\n';
+  dot += '  rankdir=LR;\n';
+  dot += '  nodesep=0.5;\n';
+  dot += '  node [fontname="Helvetica", margin=0, shape=circle, fixedsize=true, height=0.5];\n';
 
-  // For each vertex that is a center (M === 1), compute its RBS cluster using epsilon-closure.
-  rdltModel.vertices.forEach(v => {
+  // Get all vertices from the model instance.
+  const vertices = Object.values(rdltModel.nodes);
+  const vertexMap = rdltModel.nodes; // Already keyed by id.
+
+  // Determine reset-bound subsystems (RBS):
+  // For each vertex with M === 1, use getVerticesInRBS(centerId) to obtain its RBS members.
+  const rbsAssigned = new Set();
+  const rbsClusters = []; // Each element: { center: vertex, members: Set of vertex IDs }
+  vertices.forEach(v => {
     if (v.M === 1 && !rbsAssigned.has(v.id)) {
-      const members = new Set();
-      const stack = [v.id];
-      while (stack.length > 0) {
-        const currentId = stack.pop();
-        if (!members.has(currentId)) {
-          members.add(currentId);
-          rbsAssigned.add(currentId);
-          // For each outgoing edge from currentId that is epsilon-constrained, add the target.
-          rdltModel.edges.forEach(edge => {
-            if (edge.from === currentId && isEpsilon(edge)) {
-              if (!members.has(edge.to)) {
-                stack.push(edge.to);
-              }
-            }
-          });
-        }
-      }
+      // Use the model's method to obtain the RBS members.
+      const rbsIds = rdltModel.getVerticesInRBS(v.id); // returns an array of vertex IDs.
+      const members = new Set(rbsIds);
+      rbsIds.forEach(id => rbsAssigned.add(id));
       rbsClusters.push({ center: v, members });
     }
   });
 
-  // Vertices not part of any RBS.
-  const nonRBSVertices = rdltModel.vertices.filter(v => !rbsAssigned.has(v.id));
+  // Vertices not assigned to any RBS.
+  const nonRBSVertices = vertices.filter(v => !rbsAssigned.has(v.id));
 
   // Render non-RBS vertices.
   nonRBSVertices.forEach(v => {
-    let imageFile = '';
-    if (v.type === 'b') {
-      imageFile = 'assets/images/rdlt/boundary.png';
-    } else if (v.type === 'e') {
-      imageFile = 'assets/images/rdlt/entity.png';
-    } else if (v.type === 'c') {
-      imageFile = 'assets/images/rdlt/controller.png';
-    }
-    let label = v.label;
-    // If, unexpectedly, a non-RBS vertex is a center, format its label.
-    if (v.M === 1) {
-      label = `${v.label}\\nM(.)=1`;
-    }
-    dot += `  ${sanitizeId(v.id)} [label="${label}", image="${imageFile}"];\n`;
+    const htmlLabel = getHTMLLabel(v);
+    dot += `  ${sanitizeId(v.id)} [tooltip="${v.id}", label=<${htmlLabel}>];\n`;
   });
 
-  // Render each RBS cluster as a subgraph.
+  // Render each RBS cluster as a DOT subgraph.
   rbsClusters.forEach(cluster => {
     dot += `  subgraph cluster_RBS_${sanitizeId(cluster.center.id)} {\n`;
-    // Label the cluster with the center vertex's label.
-    dot += `    label="RBS: ${cluster.center.label}";\n`;
+    // Label the cluster with the center vertex's label and indicate that M(v)=1.
+    dot += `    label="M(${cluster.center.id})=1";\n`;
     dot += `    color=black;\n`;
     dot += `    style=dashed;\n`;
-    cluster.members.forEach(vid => {
-      const v = vertexMap[vid];
-      let imageFile = '';
-      if (v.type === 'b') {
-        imageFile = 'assets/images/rdlt/boundary.png';
-      } else if (v.type === 'e') {
-        imageFile = 'assets/images/rdlt/entity.png';
-      } else if (v.type === 'c') {
-        imageFile = 'assets/images/rdlt/controller.png';
-      }
-      let label = v.label;
-      // Format the center vertex's label accordingly.
-      if (v.id === cluster.center.id) {
-        label = `${v.label}\\nM(.)=1`;
-      }
-      dot += `    ${sanitizeId(v.id)} [label="${label}", image="${imageFile}"];\n`;
+    dot += `    margin=20;\n`;
+    cluster.members.forEach(id => {
+      const v = vertexMap[id];
+      const htmlLabel = getHTMLLabel(v);
+      dot += `    ${sanitizeId(v.id)} [tooltip="${v.id}", label=<${htmlLabel}>];\n`;
     });
     dot += '  }\n';
   });
 
-  // Output all edges.
+  // Render edges.
   rdltModel.edges.forEach(e => {
-    let style = e.type === "abstract" ? 'style=dashed' : ''; // Abstract edges are dashed
-    dot += `  ${sanitizeId(e.from)} -> ${sanitizeId(e.to)} [label="${e.C || 'ε'}: ${e.L || 1}" ${style}];\n`;
+    const style = e.type === "abstract" ? 'style=dashed' : '';
+    const labelC = e.C ? e.C.replace(/ϵ/g, "&epsilon;") : '&epsilon;';
+    dot += `  ${sanitizeId(e.from)} -> ${sanitizeId(e.to)} [label="${labelC}: ${e.L || 1}" ${style}];\n`;
   });
 
   dot += '}\n';
   return dot;
 }
 
+
+
 /**
  * Generates a DOT representation for a PN model using the new JSON structure.
  * The PN JSON now contains places, transitions, and arcs directly.
  */
-export function generatePNDOT(pnModel) {
+export function exportPNToDOT(pnModel) {
   // Helper: Replace any apostrophe in a node id with the string "prime"
   function sanitizeId(id) {
-    return id.replace(/'/g, "prime");
+    return id.replace(/'/g, "prime").replace(/ϵ/g, "epsilon");
+  }
+
+  // Helper: Escape HTML special characters so that apostrophes don't cause syntax errors.
+  function escapeHTML(str) {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
   }
 
   let dot = 'digraph PN {\n';
   dot += '  rankdir=LR;\n';
-  dot += '  node [fontname="Helvetica"];\n';
+  dot += '  nodesep=0.5;\n';
+  // Use fixed size nodes so that the shape remains constant.
+  dot += '  node [fontname="Helvetica", margin=0, fixedsize=true, height=0.5,];\n';
 
-  // Define places.
-  dot += '  // Places\n';
-  dot += '  node [shape=circle, width=1.0, height=1.0, labelloc=b, fixedsize=true];\n';
-  for(const place of Object.values(pnModel.places)) {
-    const placeId = sanitizeId(place.id);
-    const tokens = (place.tokens && place.tokens > 0) ? `${place.tokens}\\n` : "";
-    dot += `  ${placeId} [label="${tokens}${place.label}"];\n`;
+  // Define transitions with HTML-like xlabel (external label)
+  dot += '  // Transitions\n';
+  dot += '  node [shape=square];\n';
+  for (const trans of Object.values(pnModel.transitions)) {
+    const transId = sanitizeId(trans.id);
+    const tooltip = trans.label;
+    let htmlLabel = `<
+<TABLE BORDER="0" CELLSPACING="0">
+  <TR><TD BORDER="0"> </TD></TR>
+  <TR><TD BORDER="0" HEIGHT="40"></TD></TR>
+  <TR><TD BORDER="0"><FONT POINT-SIZE="15">${trans.id}</FONT></TD></TR>
+</TABLE>
+>`;
+    let attrStr = `tooltip="${tooltip}", label=${htmlLabel}`;
+    if (trans.hasOwnProperty('enabled')) {
+      if (trans.enabled === true) {
+        attrStr += ', style="filled,bold", fillcolor=yellowgreen, color=green';
+      } else if (trans.enabled === false) {
+        attrStr += ', style=bold, color=red';
+      }
+    }
+    dot += `  ${transId} [${attrStr}];\n`;
   }
 
-  // Define transitions.
-  dot += '  // Transitions\n';
-  dot += '  node [shape=rectangle, width=0.6, height=1.0, labelloc=b, fixedsize=true];\n';
-  for(const trans of Object.values(pnModel.transitions)) {
-    const transId = sanitizeId(trans.id);
-    if (trans.label && trans.label.includes("Connector")) {
-      dot += `  ${transId} [label="${trans.label}", style="dotted"];\n`;
-    } else {
-      dot += `  ${transId} [label="${trans.label}"];\n`;
-    }
+  // Define places with HTML-like xlabel.
+  dot += '  // Places\n';
+  dot += '  node [shape=circle];\n';
+  for (const place of Object.values(pnModel.places)) {
+    const placeId = sanitizeId(place.id);
+    const tooltip = place.label;
+    const tokenDisplay = (place.tokens && place.tokens > 0) ? `<FONT POINT-SIZE="20"><B>${place.tokens}</B></FONT>` : "";
+    let htmlLabel = `<
+<TABLE BORDER="0" CELLSPACING="0">
+  <TR><TD BORDER="0"> </TD></TR>
+  <TR><TD BORDER="0" HEIGHT="40">${tokenDisplay}</TD></TR>
+  <TR><TD BORDER="0"><FONT POINT-SIZE="15">${place.id}</FONT></TD></TR>
+</TABLE>
+>`;
+    dot += `  ${placeId} [tooltip="${tooltip}", label=${htmlLabel}];\n`;
   }
 
   // Initialize auxiliary arrays/objects for special reset arc connections.
   let auxiliaryPlacesTo = [];
-  let auxiliaryPlacesTrr = {}; // Mapping from centerId (e.g., "x2" from "Trrx2") to an array of labels
+  let auxiliaryPlacesTrr = {}; // Mapping from centerId to an array of labels
   let TrrResets = [];
 
   // Process arcs.
   dot += '  // Arcs\n';
+  // dot += '  edge [minlen=3];\n';
   pnModel.arcs.forEach(arc => {
-    // Check if the arc targets the special node "To" with reset type.
     if (arc.to === 'To' && arc.type === 'reset' && !arc.from.startsWith('PJo')) {
-      auxiliaryPlacesTo.push(pnModel.places[arc.from].label);
+      // auxiliaryPlacesTo.push(pnModel.places[arc.from].label);
+      auxiliaryPlacesTo.push(arc.from);
     }
-    // Check if the arc targets a transition with an ID starting with "Trr"
-    // (e.g., "Trrx2") and is of type reset.
     else if (arc.to.startsWith('Trr') && arc.type === 'reset' && !arc.from.startsWith('Pcons')) {
-      // Extract the centerId by removing the "Trr" prefix.
       let centerId = arc.to.substring(3);
       if (!auxiliaryPlacesTrr[centerId]) {
         auxiliaryPlacesTrr[centerId] = [];
       }
-      auxiliaryPlacesTrr[centerId].push(pnModel.places[arc.from].label);
+      // auxiliaryPlacesTrr[centerId].push(pnModel.places[arc.from].label);
+      auxiliaryPlacesTrr[centerId].push(arc.from);
     }
     else if (arc.weight) {
       let centerId = arc.from.substring(3);
-      TrrResets.push({ centerId: centerId, auxLabel: pnModel.places[arc.to].label, weight: arc.weight });
+      // TrrResets.push({ centerId: centerId, auxLabel: pnModel.places[arc.to].label, weight: arc.weight });
+      TrrResets.push({ centerId: centerId, auxID: arc.to, weight: arc.weight });
     }
-    // Otherwise, handle the arc normally.
     else {
       let arcAttrs = [];
       if (arc.type === 'reset') {
         arcAttrs.push('arrowhead="normalnormal"');
       }
+      if (arc.type === 'abstract') {
+        arcAttrs.push('style="dashed"');
+      }
       let attrString = arcAttrs.length > 0 ? ` [${arcAttrs.join(", ")}]` : "";
       dot += `  ${sanitizeId(arc.from)} -> ${sanitizeId(arc.to)}${attrString};\n`;
     }
   });
-
+  dot += '  node [fixedsize=false];\n';
   // Render auxiliary node for "To" reset arcs.
   dot += '  // Reset Arcs Connection to To\n';
   if (auxiliaryPlacesTo.length > 0) {
-    dot += `  AP_To [shape=none, label="", xlabel="`;
+    dot += `  AP_To [shape=none, label="`;
     let count = 0;
     for (const auxPlace of auxiliaryPlacesTo) {
       dot += auxPlace;
       if (count < auxiliaryPlacesTo.length - 1) dot += ",";
-      if (count % 2 === 1) dot += "\n";
+      if (count % 2 === 1) dot += "\\n";
       else dot += " ";
       count++;
     }
     dot += `", width=0, height=0];\n`;
     dot += `  AP_To -> To [arrowhead="normalnormal"];\n`;
-    dot += `{rank=same; AP_To; To;}`;
+    // dot += `  {rank=same; AP_To; To}\n`;
   }
 
   // Render auxiliary nodes for reset arcs pointing to transitions with IDs starting with "Trr".
   for (const centerId in auxiliaryPlacesTrr) {
     let auxArray = auxiliaryPlacesTrr[centerId];
     let nodeId = `AP_Trr_${centerId}`;
-    dot += `  ${nodeId} [shape=none, label="", xlabel="`;
+    dot += `  ${nodeId} [shape=none, label="`;
     let count = 0;
     for (const auxPlace of auxArray) {
       dot += auxPlace;
       if (count < auxArray.length - 1) dot += ",";
-      if (count % 2 === 1) dot += "\n";
+      if (count % 2 === 1) dot += "\\n";
       else dot += " ";
       count++;
     }
     dot += `", width=0, height=0];\n`;
-    // Create an edge from the auxiliary node to the corresponding Trr transition.
-    // The transition is assumed to have the ID "Trr" concatenated with the centerId.
     dot += `  ${nodeId} -> ${sanitizeId("Trr" + centerId)} [arrowhead="normalnormal"];\n`;
-    dot += `{rank=same;  ${nodeId}; ${sanitizeId("Trr" + centerId)};}`;
+    // dot += `  {rank=same; ${nodeId}; ${sanitizeId("Trr" + centerId)}}\n`;
   }
 
   // Render separate auxiliary nodes for each reset arc with a weight attribute.
   TrrResets.forEach((entry, index) => {
     let nodeId = `AP_Reset_${entry.centerId}_${index}`;
-    dot += ` ${nodeId} [shape=none, label="${entry.auxLabel}", height=0.2];\n`;
-    // Create an edge from the auxiliary node to the corresponding Trr transition,
-    // and label the edge with the weight.
-    dot += ` Trr${entry.centerId} -> ${nodeId} [arrowhead="normal", label="${entry.weight}"];\n`;
+    dot += `  ${nodeId} [shape=none, label="${entry.auxID}", height=0.2];\n`;
+    dot += `  Trr${entry.centerId} -> ${nodeId} [arrowhead="normal", label="${entry.weight}"];\n`;
   });
+
+  //  Maximum rows we want to show per column
+  const MAX_ROWS = 5;
+  
+  // ——— Legend as a top‑right graph label ———
+  /* -------- Constraint-alias legend (at most 5 rows per column) -------- */
+  const cmap         = pnModel.constraintMap || {};
+  const aliasEntries = Object.entries(cmap)
+    // keep only true aliases (orig ≠ short)
+    .filter(([orig, short]) => orig !== short)
+    .sort((a, b) => a[1].localeCompare(b[1]));   // sort by the short alias
+
+  const aliasLen  = aliasEntries.length;
+  const aliasCols = Math.ceil(aliasLen / MAX_ROWS);   // MAX_ROWS = 5 from previous snippet
+
+  if (aliasLen > 0) {
+    dot += '\n  // Constraint Aliasing\n';
+    dot += '  constraint_legend [\n';
+    dot += '    shape=none\n';
+    dot += '    margin=0\n';
+    dot += '    label=<\n';
+    dot += '      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="10">\n';
+    dot += `        <TR><TD ALIGN="LEFT" BORDER="1" SIDES="B" COLSPAN="${aliasCols}"><B>Constraint Alias</B></TD></TR>\n`;
+
+    /* --- bucket aliases column-wise (max 5 / column) --- */
+    const colBuckets = Array.from({ length: aliasCols }, () => []);
+    aliasEntries.forEach(([orig, short], idx) => {
+      colBuckets[Math.floor(idx / MAX_ROWS)].push({ orig, short });
+    });
+
+    const rowCount = Math.max(...colBuckets.map(c => c.length)); // ≤ MAX_ROWS
+    for (let r = 0; r < rowCount; r++) {
+      dot += '        <TR>';
+      for (let c = 0; c < aliasCols; c++) {
+        const entry = colBuckets[c][r];
+        if (entry) {
+          dot += `<TD ALIGN="LEFT"><B>${escapeHTML(entry.short)}</B> : ${escapeHTML(entry.orig)}</TD>`;
+        } else {
+          dot += '<TD></TD>';
+        }
+      }
+      dot += '</TR>\n';
+    }
+
+    dot += '      </TABLE>\n';
+    dot += '    >\n';
+    dot += '  ];\n';
+  }
+
+  /* ---------------  Vertex-label legend --------------- */
+  const vmap = pnModel.vertexLabelMap || {};
+  const vmapLength = Object.keys(vmap).length;
+  //  Number of columns we need (ceil so we have at most 5 rows / column)
+  const vmapCol = Math.ceil(vmapLength / MAX_ROWS);
+
+  if (vmapLength > 0) {
+    dot += '\n  // RDLT Vertex Labels\n';
+    dot += '  vertexLabel_legend [\n';
+    dot += '    shape=none\n';
+    dot += '    margin=0\n';
+    dot += '    label=<\n';
+    dot += '      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="10">\n';
+    // header – span all columns
+    dot += `        <TR><TD ALIGN="LEFT" BORDER="1" SIDES="B" COLSPAN="${vmapCol}"><B>RDLT Vertex Labels</B></TD></TR>\n`;
+
+    /* ---- build the grid ---- */
+    const sortedEntries = Object.entries(vmap).sort(([aId], [bId]) => aId.localeCompare(bId));
+
+    // bucket entries column-wise so every column gets max 5 rows
+    const columns = Array.from({ length: vmapCol }, () => []);
+    sortedEntries.forEach(([id, label], idx) => {
+      const colIdx = Math.floor(idx / MAX_ROWS); // 0 … vmapCol-1
+      columns[colIdx].push({ id, label });
+    });
+
+    const rows = Math.max(...columns.map(col => col.length)); // ≤ MAX_ROWS
+    for (let r = 0; r < rows; r++) {
+      dot += '        <TR>';
+      for (let c = 0; c < vmapCol; c++) {
+        const entry = columns[c][r];
+        if (entry) {
+          dot += `<TD ALIGN="LEFT"><B>${escapeHTML(entry.id)}</B> : ${escapeHTML(entry.label)}</TD>`;
+        } else {
+          dot += '<TD></TD>'; // empty cell to keep table rectangular
+        }
+      }
+      dot += '</TR>\n';
+    }
+
+    dot += '      </TABLE>\n';
+    dot += '    >\n';
+    dot += '  ];\n';
+
+    // keep invisible edge between the two legends (if the alias legend exists)
+    if (typeof aliasEntries !== 'undefined' && aliasEntries.length) {
+      dot += '  constraint_legend -> vertexLabel_legend [style=invis]\n';
+    }
+  }
 
   dot += '}\n';
   return dot;
 }
 
 
+
 /**
- * Executes the dot command to render a DOT file to an image.
+ * Executes the dot command to render a DOT file to an SVG image.
+ * After rendering, adds padding around the SVG by modifying the viewBox and wrapping the content.
  */
 export function renderDOT(dotFilename, outputFilename) {
   const outputDir = path.dirname(outputFilename);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
-  const command = `dot -Tpng ${dotFilename} -o ${outputFilename}`;
+  
+  const command = `dot -Tsvg ${dotFilename} -o ${outputFilename}`;
   exec(command, (error, stdout, stderr) => {
     if (error) {
       console.error(`Error rendering ${dotFilename}:`, error);
     } else {
       console.log(`Rendered ${dotFilename} to ${outputFilename}`);
+      
+      // After rendering, apply padding
+      addSVGPadding(outputFilename, 20); // <-- Add 20 units padding (you can adjust this)
     }
   });
 }
+
+function addSVGPadding(svgPath, padding = 20) {
+  let svgContent = fs.readFileSync(svgPath, 'utf-8');
+  
+  // Extract viewBox
+  const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/);
+
+  if (viewBoxMatch) {
+    const viewBox = viewBoxMatch[1].split(' ').map(Number);
+    let [minX, minY, width, height] = viewBox;
+
+    // Expand the viewBox
+    minX -= padding;
+    minY -= padding;
+    width += padding * 2;
+    height += padding * 2;
+
+    // Replace the old viewBox
+    svgContent = svgContent.replace(
+      /viewBox="[^"]+"/,
+      `viewBox="${minX} ${minY} ${width} ${height}"`
+    );
+
+    // 🛠️ Insert white rect background
+    const whiteBackground = `<rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="white"/>`;
+    svgContent = svgContent.replace(
+      /(<svg[^>]*>)/i,
+      `$1\n${whiteBackground}`
+    );
+
+    // 🛠️ Adjust width and height of the <svg> itself
+    svgContent = svgContent
+      .replace(/width="[^"]+"/, `width="${width}"`)
+      .replace(/height="[^"]+"/, `height="${height}"`);
+
+    fs.writeFileSync(svgPath, svgContent, 'utf-8');
+    // console.log(`Added padding of ${padding}px and white background to ${svgPath}`);
+  } else {
+    console.warn("No viewBox found in SVG. Padding skipped.");
+    return;
+  }
+}
+
+
+
 
 /**
  * Writes a DOT string to a file.
