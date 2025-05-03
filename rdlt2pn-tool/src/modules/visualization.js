@@ -139,7 +139,7 @@ export function exportPNToDOT(pnModel) {
   dot += '  node [fontname="Helvetica", margin=0, fixedsize=true, height=0.5,];\n';
 
   // Define transitions with HTML-like xlabel (external label)
-  dot += '  // Transitions\n';
+  // dot += '  // Transitions\n';
   dot += '  node [shape=square];\n';
   for (const trans of Object.values(pnModel.transitions)) {
     const transId = sanitizeId(trans.id);
@@ -163,7 +163,7 @@ export function exportPNToDOT(pnModel) {
   }
 
   // Define places with HTML-like xlabel.
-  dot += '  // Places\n';
+  // dot += '  // Places\n';
   dot += '  node [shape=circle];\n';
   for (const place of Object.values(pnModel.places)) {
     const placeId = sanitizeId(place.id);
@@ -185,7 +185,7 @@ export function exportPNToDOT(pnModel) {
   let TrrResets = [];
 
   // Process arcs.
-  dot += '  // Arcs\n';
+  // dot += '  // Arcs\n';
   // dot += '  edge [minlen=3];\n';
   pnModel.arcs.forEach(arc => {
     if (arc.to === 'To' && arc.type === 'reset' && !arc.from.startsWith('PJo')) {
@@ -207,6 +207,10 @@ export function exportPNToDOT(pnModel) {
     }
     else {
       let arcAttrs = [];
+      if (arc.hasOwnProperty('fired') && arc.fired === true) {
+        arcAttrs.push('color=blue');
+        arcAttrs.push('penwidth=2');
+      }
       if (arc.type === 'reset') {
         arcAttrs.push('arrowhead="normalnormal"');
       }
@@ -219,7 +223,6 @@ export function exportPNToDOT(pnModel) {
   });
   dot += '  node [fixedsize=false];\n';
   // Render auxiliary node for "To" reset arcs.
-  dot += '  // Reset Arcs Connection to To\n';
   if (auxiliaryPlacesTo.length > 0) {
     dot += `  AP_To [shape=none, label="`;
     let count = 0;
@@ -231,7 +234,16 @@ export function exportPNToDOT(pnModel) {
       count++;
     }
     dot += `", width=0, height=0];\n`;
-    dot += `  AP_To -> To [arrowhead="normalnormal"];\n`;
+    const toWasFired = pnModel.arcs.some(a =>
+      a.to === 'To' && a.type === 'reset' && a.fired === true
+    );
+    
+    const apToAttrs = ['arrowhead="normalnormal"'];
+    if (toWasFired) {
+      apToAttrs.push('color=blue', 'penwidth=2');
+    }
+    dot += `  AP_To -> To [${apToAttrs.join(', ')}];\n`;
+    // dot += `  AP_To -> To [arrowhead="normalnormal"];\n`;
     // dot += `  {rank=same; AP_To; To}\n`;
   }
 
@@ -239,6 +251,7 @@ export function exportPNToDOT(pnModel) {
   for (const centerId in auxiliaryPlacesTrr) {
     let auxArray = auxiliaryPlacesTrr[centerId];
     let nodeId = `AP_Trr_${centerId}`;
+    const transId  = `Trr${centerId}`;
     dot += `  ${nodeId} [shape=none, label="`;
     let count = 0;
     for (const auxPlace of auxArray) {
@@ -249,16 +262,52 @@ export function exportPNToDOT(pnModel) {
       count++;
     }
     dot += `", width=0, height=0];\n`;
-    dot += `  ${nodeId} -> ${sanitizeId("Trr" + centerId)} [arrowhead="normalnormal"];\n`;
+
+    const trrWasFired = pnModel.arcs.some(a =>
+      a.to === transId &&
+      a.type === 'reset' &&
+      a.fired === true
+    );
+  
+    // build attribute list just like for AP_To
+    const apTrrAttrs = ['arrowhead="normalnormal"'];
+    if (trrWasFired) {
+      apTrrAttrs.push('color=blue', 'penwidth=2');
+    }
+  
+    // emit the edge with conditional styling
+    dot += `  ${nodeId} -> ${sanitizeId(transId)} [${apTrrAttrs.join(', ')}];\n`;
     // dot += `  {rank=same; ${nodeId}; ${sanitizeId("Trr" + centerId)}}\n`;
   }
 
   // Render separate auxiliary nodes for each reset arc with a weight attribute.
   TrrResets.forEach((entry, index) => {
-    let nodeId = `AP_Reset_${entry.centerId}_${index}`;
-    dot += `  ${nodeId} [shape=none, label="${entry.auxID}", height=0.2];\n`;
-    dot += `  Trr${entry.centerId} -> ${nodeId} [arrowhead="normal", label="${entry.weight}"];\n`;
+    const nodeId = `AP_Reset_${entry.centerId}_${index}`;
+    const fromId = `Trr${entry.centerId}`;
+    const toId   = entry.auxID;
+
+    dot += `  ${nodeId} [shape=none, label="${toId}", height=0.2];\n`;
+
+    // figure out if the actual arc was marked fired
+    const resetArcFired = pnModel.arcs.some(a =>
+      a.from === fromId &&
+      a.to   === toId   &&
+      a.fired === true
+    );
+
+    // build the attribute list
+    const weightAttrs = [
+      'arrowhead="normal"',
+      `label="${entry.weight}"`
+    ];
+    if (resetArcFired) {
+      weightAttrs.push('color=blue', 'penwidth=2');
+    }
+
+    dot += `  ${sanitizeId(fromId)} -> ${nodeId} [${weightAttrs.join(', ')}];\n`;
   });
+
+  
 
   //  Maximum rows we want to show per column
   const MAX_ROWS = 5;
@@ -275,7 +324,7 @@ export function exportPNToDOT(pnModel) {
   const aliasCols = Math.ceil(aliasLen / MAX_ROWS);   // MAX_ROWS = 5 from previous snippet
 
   if (aliasLen > 0) {
-    dot += '\n  // Constraint Aliasing\n';
+    // dot += '\n  // Constraint Aliasing\n';
     dot += '  constraint_legend [\n';
     dot += '    shape=none\n';
     dot += '    margin=0\n';
@@ -315,7 +364,7 @@ export function exportPNToDOT(pnModel) {
   const vmapCol = Math.ceil(vmapLength / MAX_ROWS);
 
   if (vmapLength > 0) {
-    dot += '\n  // RDLT Vertex Labels\n';
+    // dot += '\n  // RDLT Vertex Labels\n';
     dot += '  vertexLabel_legend [\n';
     dot += '    shape=none\n';
     dot += '    margin=0\n';

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RDLT to Petri Net Converter</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <h1>RDLT to Petri Net Converter</h1>
+  
+  <div class="section">
+    <h2>JSON RDLT Input</h2>
+    <textarea id="jsonInput" placeholder="Paste JSON RDLT input here...">
+    </textarea>
+  </div>
+  
+  <button id="convertBtn">Convert</button>
+  <button id="convertBtn">Convert</button>
+  
+  <div id="outputSection" class="section" style="display:none;">
+    <h2>Visualization</h2>
+    <h3>Input RDLT</h3>
+    <div id="inputRDLT" class="graph"></div>
+    <h3>Preprocessed RDLT</h3>
+    <div id="preproRDLT" class="graph"></div>
+    <h3>Output PN</h3>
+    <div id="outputPN" class="graph"></div>
+    <h2>Generated Petri Net Model (DOT Format)</h2>
+    <pre id="dotOutput"></pre>
+    <div>
+      <button class="exportBtn" data-format="svg">Export as SVG</button>
+      <button class="exportBtn" data-format="png">Export as PNG</button>
+      <button class="exportBtn" data-format="dot">Export as DOT</button>
+    </div>
+  </div>
+  
+  <div id="reportSection" class="section" style="display:none;">
+    <h2>Structural & Behavioral Analysis Report</h2>
+    <pre id="reportOutput"></pre>
+  </div>
+  
+  <script>
+  </script>
+</body>
+</html>

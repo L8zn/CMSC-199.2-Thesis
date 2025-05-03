@@ -1,0 +1,20 @@
+body { 
+  font-family: sans-serif; 
+  padding: 20px; 
+}
+/* textarea { width: 80%; height: 150px; } */
+pre { background: #f4f4f4; padding: 10px; }
+.section {
+  margin-bottom: 20px; 
+  border: 1px solid black;
+}
+button { margin: 5px 0; }
+.graph {
+  /* however big you want it to be: */
+  width: 100%;     /* full width of parent */
+  height: 400px;   /* or 100% of parent, etc. */
+  border: 1px solid #ccc;
+  /* optional: make it responsive */
+  resize: vertical;
+  overflow: hidden;
+}

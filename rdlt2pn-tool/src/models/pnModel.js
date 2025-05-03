@@ -176,6 +176,99 @@ export class PNModel {
     this.constraintMap[orig] = short;
     return short;
   }
+
+  /**
+   * Apply a marking/enabled/fired update in one go.
+   * `state` should be an object with
+   *   – marking:  { [placeId]: number, … }
+   *   – enabledTransitions:  string[]   // list of transition IDs
+   *   – firedTransitions:    string[]   // list of transition IDs
+   */
+  updateState(state) {
+    // on first update, snapshot all old values
+    if (!this._snapshot) {
+      this._snapshot = {
+        tokens:   {},    // placeId → original tokens
+        enabled:  {},    // transId → original enabled value (or undefined)
+        fired:    []     // index → original fired value (or undefined)
+      };
+      // snapshot places.tokens
+      for (const pid in this.places) {
+        this._snapshot.tokens[pid] = this.places[pid].tokens;
+      }
+      // snapshot transitions.enabled
+      for (const tid in this.transitions) {
+        this._snapshot.enabled[tid] = this.transitions[tid].enabled;
+      }
+      // snapshot arcs.fired (by array index)
+      this.arcs.forEach((arc, idx) => {
+        this._snapshot.fired[idx] = arc.fired;
+      });
+    }
+
+    const { marking = {}, enabledTransitions = [], firedTransitions = [] } = state;
+
+    // 1) update places.tokens
+    for (const pid in this.places) {
+      if (marking.hasOwnProperty(pid)) {
+        this.places[pid].tokens = marking[pid];
+      }
+    }
+
+    // 2) update transitions.enabled
+    for (const tid in this.transitions) {
+      this.transitions[tid].enabled = enabledTransitions.includes(tid);
+    }
+
+    // 3) update arcs.fired
+    this.arcs.forEach(arc => {
+      // an arc is “fired” if it’s connected to any fired transition
+      arc.fired = firedTransitions.includes(arc.from) ||
+                  firedTransitions.includes(arc.to);
+    });
+  }
+
+  /**
+   * Revert the last updateState: restore all tokens, enabled, and fired
+   * back to their pre-update values.  Keeps the .tokens property but
+   * resets it to the original value; removes/reshapes .enabled and .fired
+   * exactly as they were.
+   */
+  revertState() {
+    if (!this._snapshot) return;
+
+    // 1) restore tokens
+    for (const pid in this.places) {
+      if (this._snapshot.tokens.hasOwnProperty(pid)) {
+        this.places[pid].tokens = this._snapshot.tokens[pid];
+      }
+    }
+
+    // 2) restore transitions.enabled
+    for (const tid in this.transitions) {
+      const orig = this._snapshot.enabled[tid];
+      if (orig === undefined) {
+        delete this.transitions[tid].enabled;
+      } else {
+        this.transitions[tid].enabled = orig;
+      }
+    }
+
+    // 3) restore arcs.fired
+    this.arcs.forEach((arc, idx) => {
+      const orig = this._snapshot.fired[idx];
+      if (orig === undefined) {
+        delete arc.fired;
+      } else {
+        arc.fired = orig;
+      }
+    });
+
+    // drop the snapshot so you can update again fresh
+    delete this._snapshot;
+  }
+  
+
   
   // Insert a new node (newNodeId) on a single arc (first matching arc)
   // that goes from sourceId to targetId.

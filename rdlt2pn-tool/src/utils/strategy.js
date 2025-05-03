@@ -13,6 +13,7 @@ function formatPNId(prefix, id, suffix = "") {
 
 // Step 1 (Lines 1–2): Map each RDLT node to a PN transition.
 export function mapVertexToTransition(preprocessedRDLTModel, petriNetModel) {
+  let log = "";
   // Map each vertex into a transition.
   for (const vertex of Object.values(preprocessedRDLTModel.nodes)) {
     const transition = { 
@@ -22,6 +23,7 @@ export function mapVertexToTransition(preprocessedRDLTModel, petriNetModel) {
     };
     petriNetModel.addTransition(transition);
     if(vertex.label.trim()!=='' && !vertex.rbsGroup) petriNetModel.vertexLabelMap[vertex.id] = vertex.label;
+    log += `[Step 1] Vertex ${vertex.id} mapped into transition ${transition.id}.\n`;
   }
   // Map each edge into an arc.
   for (const edge of preprocessedRDLTModel.edges) {
@@ -32,55 +34,63 @@ export function mapVertexToTransition(preprocessedRDLTModel, petriNetModel) {
     };
     petriNetModel.addArc(arc);
   }
+  console.log("Step 1: Mapped vertices to transitions.");
+  return log;
 }
 
 // Step 2 (Lines 3–8): Process split nodes. 
 //  Analyze outgoing edges to decide if the node qualifies as a split. 
 //  Then, based on sibling detection, decide if a split place (Pxsplit) is created.
 export function handleSplitPlaces(preprocessedRDLTModel, petriNetModel) {
+  let log = "";
   for (const vertex of Object.values(preprocessedRDLTModel.nodes)) {
-    if (preprocessedRDLTModel.checkIfSplitCase1(vertex) === true) {
-      // Use formatPNId for places. Here the suffix "split" is appended.
+    const result = preprocessedRDLTModel.checkIfSplitCase1(vertex);
+    if (result.case1 === true) {
       const splitPlace = {
         id: formatPNId("P", vertex.id, "split"),
-        // label: formatPNId("P", vertex.label, "split"),
         label: `checked(${vertex.id})`,
         splitPlace: true,
-        // checkedPlace: true,
         tokens: 0
       };
       vertex.splitPlace = true;
       petriNetModel.addPlace(splitPlace);
-      // Insert the split place between the transition corresponding to this vertex and its outgoing arcs.
       petriNetModel.insertNodeOnOutgoingArcs(formatPNId("T", vertex.id), splitPlace.id);
-      console.log(`Step2: Vertex ${vertex.id} qualifies as SPLIT case 1`);
+      // console.log(`Step2: Vertex ${vertex.id} qualifies as SPLIT case 1`);
+      log += `[Step 2] Vertex ${vertex.id} qualifies as SPLIT case 1:\n`;
+      if(result.isSiblingsOrJoin) log += ` - Processes at ${vertex.id} are siblings with an OR-JOIN merge point.\n`;
+      if(result.isNonSiblings) log += ` - Processes at ${vertex.id} are nonsiblings.\n`;
+      if(result.hasAbstract) log += ` - Processes at ${vertex.id} are abstract arcs.\n`;
+      if(result.hasLoop) log += ` - One process of ${vertex.id} is a loop or cycle.\n`;
     }
   }
+  console.log("Step 2: Completed handling split places.");
+  return log;
 }
 
 // Step 3 (Lines 9–17): For each node with incoming edges, 
 //   create the input place (Pym) 
 //   and—if needed for Σ‑constrained arcs—create auxiliary PN components (TJy, PJy).
 export function handleIncomingArcs(preprocessedRDLTModel, petriNetModel) {
+  let log = "";
   for (const vertex of Object.values(preprocessedRDLTModel.nodes)) {
-    // Filter for edges whose 'to' equals the current vertex's id.
     const incomingEdges = preprocessedRDLTModel.edges.filter(edge => edge.to === vertex.id);
-    if (incomingEdges.length > 0) {
-      // Create input place "P<id>m" for vertex.
+    if (incomingEdges.length > 0) {    
       let traversedArcs = `(${incomingEdges[0].from},${incomingEdges[0].to})`;
       for(const incomingEdge of incomingEdges) {
         if(incomingEdge !== incomingEdges[0])
           traversedArcs += `,(${incomingEdge.from},${incomingEdge.to})`;
       }
+      // Create input place "P<id>m" for vertex.
       const Pym = { 
         id: formatPNId("P", vertex.id, "m"), 
-        // label: formatPNId("P", vertex.label, "m"), 
         label: `traversed(${traversedArcs})`,
         traversedPlace: true,
         tokens: 0 
       };
       petriNetModel.addPlace(Pym);
       petriNetModel.insertNodeOnIncomingArcs(formatPNId("T", vertex.id), Pym.id);
+      log += `[Step 3] Created input place ${Pym.id} for vertex ${vertex.id}.\n`;
+
       // If the vertex is the sink ("o"), create Po and connect its transition to Po.
       if (vertex.id === "o") {
         const sinkPlace = { id: "Po", label: "Sink", globalSink: true, tokens: 0 };
@@ -90,7 +100,9 @@ export function handleIncomingArcs(preprocessedRDLTModel, petriNetModel) {
           to: sinkPlace.id, 
           type: "normal" 
         });
+        log += `[Step 3] Added global sink place ${sinkPlace.id}.\n`;
       }
+
       // Process incoming Σ‑constrained edges (where C !== "ϵ").
       const sigmaEdges = incomingEdges.filter(edge => edge.C !== "ϵ");
       if (sigmaEdges.length > 0) {
@@ -98,16 +110,15 @@ export function handleIncomingArcs(preprocessedRDLTModel, petriNetModel) {
         // Create transition "TJ<id>" for the vertex.
         let TJy = { 
           id: formatPNId("T", `J${vertex.id}`), 
-          // label: formatPNId("T", `J${vertex.label}`) 
           label: `traverse(${traversableArcs})`,
           traverseTransition: true, 
           activities: traversableArcs
         };
-        // petriNetModel.addTransition(TJy);
         if (sigmaEdges.length === 1) {
           // If the source node of the single sigma edge qualifies as a split,
           // use its split place.
           petriNetModel.addTransition(TJy);
+          log += `[Step 3] Added transition ${TJy.id} for vertex ${vertex.id}.\n`;
           const sourceNode = preprocessedRDLTModel.getNode(sigmaEdges[0].from);
           if (sourceNode.splitPlace)
             petriNetModel.insertNodeOnArc(
@@ -130,11 +141,11 @@ export function handleIncomingArcs(preprocessedRDLTModel, petriNetModel) {
           TJy.label = `traverse(${traversableArcs})`;
           TJy.activities = traversableArcs;
           petriNetModel.addTransition(TJy);
+          log += `[Step 3] Added transition ${TJy.id} for vertex ${vertex.id}.\n`;
           const incomingEpsilonEdges = incomingEdges.filter(edge => edge.C === "ϵ");
           if (incomingEpsilonEdges) {
-            // console.log("IncomingEpsilonEdgesDetected");
-            // console.log("incomingEpsilonEdges",incomingEpsilonEdges);
-            petriNetModel.insertNodeOnIncomingArcs(Pym.id, TJy.id, true, incomingEpsilonEdges); // if epsilon arc exist 
+            // if epsilon arc exist, exclude epsilon arcs from the insertion
+            petriNetModel.insertNodeOnIncomingArcs(Pym.id, TJy.id, true, incomingEpsilonEdges); 
           } else {
             // Perform the normal insertion for mapping structure 7
             petriNetModel.insertNodeOnIncomingArcs(Pym.id, TJy.id);
@@ -158,28 +169,28 @@ export function handleIncomingArcs(preprocessedRDLTModel, petriNetModel) {
         }
         let PJy = { 
           id: formatPNId("P", `J${vertex.id}`), 
-          // label: formatPNId("PJ", vertex.label), 
           label: auxLabel,
           tokens: tokenCount,
           auxiliary: true,
           resetTarget: formatPNId("T", vertex.id)
         };
         if(vertex.rbsGroup) PJy.rbsGroup = vertex.rbsGroup;
-        // console.log(vertex,PJy);
         petriNetModel.addPlace(PJy);
         petriNetModel.addArc({ from: PJy.id, to: TJy.id, type: "normal" });
+        log += `[Step 3] Added auxiliary place ${PJy.id} for vertex ${vertex.id}.\n`;
       }
-      console.log(`[Step3] Processed incoming arcs for vertex ${vertex.id}`);
     }
   }
+  console.log("Step 3: Completed processing incoming arcs.");
+  return log;
 }
 
 // Step 4 (Lines 18–29): Process epsilon arcs 
 // and create the appropriate auxiliary PN components.
 export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
+  let log = "";
   // Filter for edges whose constraint is exactly epsilon.
   const epsilonArcs = preprocessedRDLTModel.edges.filter(edge => edge.C === 'ϵ');
-  // let abstractIndex = 0;
   let indexMap = new Map();
   epsilonArcs.forEach(arc => {
     const sourceId = arc.from;
@@ -187,9 +198,7 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
     if (arc.type === "abstract") {
       if(!indexMap[sourceId,targetId]) indexMap[sourceId,targetId] = 1;
       else indexMap[sourceId,targetId]++;
-      // abstractIndex++;
       const transitionId = formatPNId("T", `ϵ${targetId}`, `_${indexMap[sourceId,targetId]}`);
-      // const transitionLabel = formatPNId("T", `ϵ${targetLabel}`, `_${abstractIndex}`);
       const transitionLabel = `traverse((${sourceId},${targetId}))\\nrbsPath(${arc.path})`;
       const T_epsilon = { 
         id: transitionId,
@@ -198,6 +207,7 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
         activities: `(${sourceId},${targetId})`
       };
       petriNetModel.addTransition(T_epsilon);
+      log += `[Step 4] Created transition ${T_epsilon.id} for abstract arc (${sourceId},${targetId}).\n`;
       if(petriNetModel.places[formatPNId("P", `${sourceId}`, "split")]){ // if multiple abstract arcs
         const pnAbstractArcs = petriNetModel.arcs.filter(
           arc => arc.from === formatPNId("P", `${sourceId}`, "split") && arc.type === "abstract");
@@ -214,21 +224,22 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
         }
         petriNetModel.addArc({ from: formatPNId("T", sourceId), to: T_epsilon.id, type: "normal" });
         petriNetModel.addArc({ from: T_epsilon.id, to: formatPNId("P", `${targetId}`, "m"), type: "normal" });
-        petriNetModel.addPlace({ 
+        const abstractArcInputPlace = { 
           id: formatPNId("P", `ϵ${targetId}${sourceId}`), 
           label: `checked(${sourceId})`,
           checkedPlace: true,
           tokens: 0 
-        });
+        }
+        petriNetModel.addPlace(abstractArcInputPlace);
         petriNetModel.insertNodeOnArc(
           formatPNId("T", sourceId), 
           T_epsilon.id, 
-          formatPNId("P", `ϵ${targetId}${sourceId}`)
+          abstractArcInputPlace.id
         );
+        log += `[Step 4] Created input place ${abstractArcInputPlace.id} for abstract arc (${sourceId},${targetId}).\n`;
       }      
       const epsilonAuxPlace = {
         id: formatPNId("P", `ϵn${targetId}`, `_${indexMap[sourceId,targetId]}`),
-        // label: formatPNId("P", `ϵn${targetLabel}`, `,${abstractIndex}`),
         label: `L((${sourceId},${targetId}))\\nrbsPath(${arc.path})`,
         tokens: arc.L,
         auxiliary: true,
@@ -236,10 +247,10 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
       };
       petriNetModel.addPlace(epsilonAuxPlace);
       petriNetModel.addArc({ from: epsilonAuxPlace.id, to: T_epsilon.id, type: "normal" });
+      log += `[Step 4] Created auxiliary place ${epsilonAuxPlace.id} for abstract arc (${sourceId},${targetId}).\n`;
     } else {
       // Non-abstract epsilon arc.
       const transitionId = formatPNId("T", `ϵ${targetId}${sourceId}`);
-      // const transitionLabel = formatPNId("T", `ϵ${targetLabel}`);
       const transitionLabel = `traverse((${sourceId},${targetId}))`;
       const T_epsilon = { 
         id: transitionId, 
@@ -248,6 +259,7 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
         activities: `(${sourceId},${targetId})`
       };
       petriNetModel.addTransition(T_epsilon);
+      log += `[Step 4] Created transition ${T_epsilon.id} for arc (${sourceId},${targetId}).\n`;
       // Check whether the source node already has a split place.
       if (!preprocessedRDLTModel.getNode(sourceId).splitPlace) {
         petriNetModel.insertNodeOnArc(
@@ -257,11 +269,11 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
         );
         petriNetModel.addPlace({ 
           id: formatPNId("P", `ϵ${targetId}${sourceId}`), 
-          // label: formatPNId("P", `ϵ${targetLabel}`), 
           label: `checked(${sourceId})`,
           checkedPlace: true,
           tokens: 0 
         });
+        log += `[Step 4] Created input place ${formatPNId("P", `ϵ${targetId}${sourceId}`)} for arc (${sourceId},${targetId}).\n`;
         petriNetModel.insertNodeOnArc(
           formatPNId("T", sourceId), 
           T_epsilon.id, 
@@ -277,28 +289,26 @@ export function handleEpsilonArcs(preprocessedRDLTModel, petriNetModel) {
       // Create auxiliary epsilon place for the target.
       const epsilonAuxPlace = { 
         id: formatPNId("P", `ϵn${targetId}${sourceId}`), 
-        // label: formatPNId("P", `ϵn${targetLabel}`), 
         label: `L(${sourceId},${targetId})`,
         tokens: arc.L,
         auxiliary: true,
         resetTarget: formatPNId("T", targetId)
       };
-      // console.log(epsilonAuxPlace);
       if(arc.rbsGroup) epsilonAuxPlace.rbsGroup = arc.rbsGroup;
-      // console.log(arc.from,arc.to,arc.rbsGroup);
-      // console.log(epsilonAuxPlace);
       petriNetModel.addPlace(epsilonAuxPlace);
       petriNetModel.addArc({ from: epsilonAuxPlace.id, to: T_epsilon.id, type: "normal" });
+      log += `[Step 4] Created auxiliary place ${epsilonAuxPlace.id} for arc (${sourceId},${targetId}).\n`;
     }
   });
   console.log("Step 4: Completed processing epsilon arcs.");
+  return log;
 }
 
 // Step 5 (Lines 30–46): Process Σ‑constrained arcs, 
 // ensuring that extra auxiliary places and reset arcs are created.
 export function handleSigmaArcs(preprocessedRDLTModel, petriNetModel) {
+  let log = "";
   // Filter for edges where constraint is not epsilon.
-  // first pull out the ones you actually care about:
   const allSigma = preprocessedRDLTModel.edges.filter(e => e.C !== 'ϵ');
   // split singles vs. “the rest”
   const singleCharArcs = [];
@@ -315,15 +325,9 @@ export function handleSigmaArcs(preprocessedRDLTModel, petriNetModel) {
     const sourceId = edge.from;
     const targetId = edge.to;
     const origC = edge.C;
-    // const targetLabel = preprocessedRDLTModel.getNode(targetId).label;
-    // Normalize the constraint string: remove commas and extra spaces.
-    // const origC = edge.C.replace(/,+/g, '').trim();  // strip commas & whitespace
     const constraint = petriNetModel.getShortConstraint(origC);
-    // console.log(sourceId,targetId,preprocessedRDLTModel.getNode(sourceId).splitPlace);
     if (!preprocessedRDLTModel.getNode(sourceId).splitPlace) {
       const sigmaPlaceId = formatPNId("P", `${constraint}${targetId}`);
-      // console.log(sigmaPlaceId);
-      // const sigmaPlaceLabel = formatPNId("P", `${constraint}${targetLabel}`);
       const sigmaPlaceLabel = `checked(${sourceId})`;
       let sigmaPlace = petriNetModel.places[sigmaPlaceId];
       // If the auxiliary sigma place does not exist, create it.
@@ -335,6 +339,7 @@ export function handleSigmaArcs(preprocessedRDLTModel, petriNetModel) {
           tokens: 0 
         };
         petriNetModel.addPlace(sigmaPlace);
+        log += `[Step 5] Created input place ${sigmaPlace.id} for arc (${sourceId},${targetId}).\n`;
         petriNetModel.insertNodeOnArc( 
           formatPNId("T", sourceId), 
           formatPNId("T", `J${targetId}`), 
@@ -342,21 +347,17 @@ export function handleSigmaArcs(preprocessedRDLTModel, petriNetModel) {
         );
         // Get the prefix for epsilon transitions for the target vertex.
         const epsilonPrefix = formatPNId("T", `ϵ${targetId}`);
-        // console.log(epsilonPrefix);
         // Build a list of all transitions whose id starts with the epsilonPrefix.
         const T_epsilon_list = Object.values(petriNetModel.transitions)
           .filter(transition => transition.id.startsWith(epsilonPrefix));
 
-
         if (T_epsilon_list.length > 0) { // For structure 9 mix-join.
-          // console.log("MIX JOIN FOUND");
           const incomingEpsilonArcs = preprocessedRDLTModel.edges.filter(edge => edge.C === 'ϵ' && edge.to === targetId);
           let unconstrainedEpsilonArcs = `(${incomingEpsilonArcs[0].from},${incomingEpsilonArcs[0].to})`;
           for(const incomingEpsilonArc of incomingEpsilonArcs) {
             if(incomingEpsilonArc !== incomingEpsilonArcs[0])
               unconstrainedEpsilonArcs += `,(${incomingEpsilonArc.from},${incomingEpsilonArc.to})`;
           }
-          // console.log(incomingEpsilonArcs);
           const sigmaEpsilonPlaceId = formatPNId("P", `${constraint}ϵ`);
           let sigmaEpsilonPlace = petriNetModel.places[sigmaEpsilonPlaceId];
           
@@ -368,6 +369,7 @@ export function handleSigmaArcs(preprocessedRDLTModel, petriNetModel) {
               unconstrainedPlace: true,
               tokens: 0 
             });
+            log += `[Step 5] Created place ${sigmaEpsilonPlaceId} for arc (${sourceId},${targetId}).\n`;
           }
           // For each epsilon transition, add the corresponding arc connections.
           for (const T_epsilon of T_epsilon_list) {
@@ -401,28 +403,24 @@ export function handleSigmaArcs(preprocessedRDLTModel, petriNetModel) {
       }
     }
   });
-  console.log("Step 5: Completed handling sigma-constrained (and epsilon) arcs.");
+  console.log("Step 5: Completed processing sigma arcs.");
+  return log;
 }
 
 
 // Step 6 (Lines 47–55): Map reset-bound subsystems
 // by processing the level‑2 RDLT graphs.
 export function handleRBS(preprocessedRDLTModel, petriNetModel) {
+  let log = "";
   // Iterate over each RBS group stored in combinedModel.rbsGroups.
   // Each key is a centerId and its value is an array of node IDs in that RBS.
-  // console.log(preprocessedRDLTModel.nodes);
-  // console.log(preprocessedRDLTModel.rbsGroups);
   for (const centerId in preprocessedRDLTModel.rbsGroups) {
     const rbsNodeIds = preprocessedRDLTModel.rbsGroups[centerId];
     // Determine if any node in this RBS has an outgoing edge.
     let hasOutBridge = false;
-    // Iterate over each original ID in the RBS.
-    // let outBrides = [];
     for (const rbsNodeId of rbsNodeIds) {
       const rbsNode = preprocessedRDLTModel.nodes[rbsNodeId];
-      // console.log(rbsNode);
       if (rbsNode && rbsNode.isOutBridge) {
-        // outBrides.push(rbsNodeId);
         hasOutBridge = true;
         break;
       }
@@ -447,11 +445,11 @@ export function handleRBS(preprocessedRDLTModel, petriNetModel) {
       // Connect Pcons to Trr with a normal arc and also add a reset arc.
       petriNetModel.addArc({from: Pcons.id, to: Trr.id, type: "normal"});
       petriNetModel.addArc({from: Pcons.id, to: Trr.id, type: "reset"});
-
+      log += `[Step 6] Created consensus place ${Pcons.id} for RBS with center ${centerId}.\n`;
+      log += `[Step 6] Created reset transition ${Trr.id} for RBS with center ${centerId}.\n`;
       // For each edge that is an out-bridge for this RBS, connect the corresponding Petri net
       // transition (T'<node.id>) to Pcons if not already connected.
       for (const rbsNodeId of rbsNodeIds) {
-        // let level1NodeId = rbsNodeId.slice(0, -1);
         if(preprocessedRDLTModel.nodes[rbsNodeId] && preprocessedRDLTModel.nodes[rbsNodeId].isOutBridge) {
           preprocessedRDLTModel.nodes[rbsNodeId].outgoing.forEach(edge => {
             let TprimeId = `T'${edge.from}`;
@@ -463,52 +461,59 @@ export function handleRBS(preprocessedRDLTModel, petriNetModel) {
           });
         }
       }
-      
-      console.log(`[Step6] Processed RBS with center ${centerId}: Created ${Pcons.id} and ${Trr.id}`);
+      console.log(`Step 6: Processed RBS with center ${centerId}: Created ${Pcons.id} and ${Trr.id}`);
     }
   }
+  return log;
 }
 
 // Step 7 (Lines 56–60): Process bridge arcs 
 // that connect level‑1 and level‑2.
 export function handleBridgeArcs(preprocessedRDLTModel, petriNetModel){
+  let log = "";
   for (const vertex of Object.values(preprocessedRDLTModel.nodes)) {
     if(vertex.isInBridge && !vertex.rbsGroup){
       petriNetModel.addArc({ from: `P${vertex.id}m`, to: `T'${vertex.id}`, type: "normal" });
-      // petriNetModel.places[`P${vertex.id}m`].splitPlace = true;
+      log += `[Step 7] Connected in-bridges for vertex ${vertex.id}.\n`;
     }
     if(vertex.isOutBridge && !vertex.rbsGroup){ 
       for( const arc of petriNetModel.transitions[`T${vertex.id}`].outgoing) {
         petriNetModel.addArc({ from: `T'${vertex.id}`, to: arc.to, type: "normal" });
       }
+      log += `[Step 7] Connected out-bridges for vertex ${vertex.id}.\n`;
     }
   };
   console.log("Step 7: Completed processing bridge arcs.");
+  return log;
 }
 
 // Step 8 (Lines 61–68): Process auxiliary places 
 // and properly wire reset arcs.
 export function handleAuxiliaryPlaces(preprocessedRDLTModel, petriNetModel){
+  let log = "";
   const auxiliaryPlaceList = Object.values(petriNetModel.places).filter(auxiliaryPlace => auxiliaryPlace.auxiliary);
-  // console.log(auxiliaryPlaceList);
 
   for (const auxiliaryPlace of auxiliaryPlaceList) {
     if(petriNetModel.transitions['To']) petriNetModel.addArc({ from: auxiliaryPlace.id, to: 'To', type: "reset" });
     if(auxiliaryPlace.rbsGroup){
       petriNetModel.addArc({ from: auxiliaryPlace.id, to: `Trr${auxiliaryPlace.rbsGroup}`, type: "reset" });
       petriNetModel.addArc({ from: `Trr${auxiliaryPlace.rbsGroup}`, to: auxiliaryPlace.id, type: "normal", weight: auxiliaryPlace.tokens});
+      log += `[Step 8] Added reset and weighted arcs to reset transition Trr${auxiliaryPlace.rbsGroup}.\n`;
     }
     let targetId = auxiliaryPlace.resetTarget.replace(/'/g, '').slice(1); 
     if(!preprocessedRDLTModel.hasLoopingArc(targetId) && targetId !== 'o') {
       petriNetModel.addArc({ from: auxiliaryPlace.id, to: auxiliaryPlace.resetTarget, type: "reset" });
+      log += `[Step 8] Added reset arc from ${auxiliaryPlace.id} to ${auxiliaryPlace.resetTarget}.\n`;
     }
   }
   console.log("Step 8: Completed processing auxiliary places and reset arcs.");
+  return log;
 }
 
 // Step 9 (Line 69): Connect all source nodes 
 // to a global source place.
 export function handleSourceTransitions(preprocessedRDLTModel, petriNetModel){
+  let log = "";
   if(preprocessedRDLTModel.nodes['i']) {
     petriNetModel.addPlace({ 
       id: 'Pim', 
@@ -517,6 +522,8 @@ export function handleSourceTransitions(preprocessedRDLTModel, petriNetModel){
       tokens: 1 
     });
     petriNetModel.addArc({ from: 'Pim', to: 'Ti', type: "normal" });
-    console.log("Step 9: Completed connecting source transitions to global source place.");
+    log += `[Step 9] Added global source place Pim.\n`;
   }
+  console.log("Step 9: Completed connecting source transitions to global source place.");
+  return log;
 }

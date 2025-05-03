@@ -138,7 +138,7 @@ export function isConnectedFromSourceToSink(pnModel) {
 
   let auxiliary = [];
   unreached.forEach(nodeid => {
-    if(pnModel.places[nodeid].auxiliary) auxiliary.push(nodeid);
+    if(pnModel.places[nodeid] && pnModel.places[nodeid].auxiliary) auxiliary.push(nodeid);
   });
 
   // const auxiliary = nodes.filter(node => node.auxiliary);
@@ -147,7 +147,7 @@ export function isConnectedFromSourceToSink(pnModel) {
   //   - the designated sink is reached, and
   //   - no isolated nodes are found.
   const stronglyConnected = sinkReached && (isolatedNodes.length === 0);
-  
+
   return {
     stronglyConnected,
     // visited: forwardResult.visited,
@@ -156,10 +156,8 @@ export function isConnectedFromSourceToSink(pnModel) {
     isolatedNodes,
     // traversalSteps: forwardResult.traversalSteps,
     source: designatedSource,
-    sink: designatedSink,
-    report: `The sink ${designatedSink} is reachable from the source ${designatedSource}
-     with ${isolatedNodes.length} isolated nodes and ${unreached.length} unreached nodes.
-     having ${auxiliary.length} of the ${unreached.length} unreached nodes are auxiliary places.`
+    sink: designatedSink//,
+    // report: `The sink ${designatedSink} is ${stronglyConnected? "reachable" : "unreachanle"} from the source ${designatedSource} with ${isolatedNodes.length} isolated nodes and ${unreached.length} unreached nodes, having ${auxiliary.length} out of ${unreached.length} unreached nodes are auxiliary places.`
   };
 }
 
@@ -176,7 +174,7 @@ export function structuralAnalysis(pnModel) {
   const auxiliarySources = getAuxiliarySourcePlaces(pnModel);
   
   if (allSources.length !== 1) {
-    issues.push(`Expected exactly 1 source place; found ${allSources.length}. (Core: ${coreSources.length}, Auxiliary: ${auxiliarySources.length})`);
+    issues.push(`Expected exactly 1 source place; found ${allSources.length}. (Non-auxiliary: ${coreSources.length}, Auxiliary: ${auxiliarySources.length})`);
   }
   
   const sinks = getSinkPlaces(pnModel);

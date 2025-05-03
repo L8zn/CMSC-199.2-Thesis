@@ -12,6 +12,7 @@ import {
   handleAuxiliaryPlaces,
   handleSourceTransitions
 } from '../utils/strategy.js';
+import { exportPNToDOT, exportRDLTToDOT } from '../modules/visualization.js';
 
 /**
  * 
@@ -34,16 +35,46 @@ import {
 // Now the mapping function expects the combined RDLT.
 export function mapToPetriNet(combinedRDLT) {
   const petriNet = new PNModel();
+  let conversionDOT = [{
+    log: `[Preprocess] EVSA + Extended Level 1.`,
+    dotLines: exportRDLTToDOT(combinedRDLT).split('\n')
+  }];
+  conversionDOT.push({
+    log: mapVertexToTransition(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleSplitPlaces(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleIncomingArcs(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleEpsilonArcs(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleSigmaArcs(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleRBS(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleBridgeArcs(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleAuxiliaryPlaces(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
+  conversionDOT.push({
+    log: handleSourceTransitions(combinedRDLT, petriNet),
+    dotLines: exportPNToDOT(petriNet).split('\n')
+  });
 
-  mapVertexToTransition(combinedRDLT, petriNet);
-  handleSplitPlaces(combinedRDLT, petriNet);
-  handleIncomingArcs(combinedRDLT, petriNet);
-  handleEpsilonArcs(combinedRDLT, petriNet);
-  handleSigmaArcs(combinedRDLT, petriNet);
-  handleRBS(combinedRDLT, petriNet);
-  handleBridgeArcs(combinedRDLT, petriNet);
-  handleAuxiliaryPlaces(combinedRDLT, petriNet);
-  handleSourceTransitions(combinedRDLT, petriNet);
-
-  return petriNet;
+  return {petriNet,conversionDOT};
 }

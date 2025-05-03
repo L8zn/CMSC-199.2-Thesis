@@ -10,7 +10,7 @@ import { behavioralAnalysis, simulateBehavior } from './behavioralAnalysis.js';
 export function convert(rdltInput, extend = true) {
   // Step 1: Parse the RDLT input.
   // const rdltJSON = parseRDLT(rdltInput);
-  const parsedRDLT = parseRDLT(rdltInput);
+  const parsedRDLT = parseRDLT(rdltInput, extend);
   console.log('parsed OK,', parsedRDLT.warnings.length === 0? '0 warnings': ' warnings: '+ parsedRDLT.warnings);
 
   // Create the RDLTModel from JSON using the static fromJSON method.
@@ -29,40 +29,48 @@ export function convert(rdltInput, extend = true) {
   // console.log(combinedRDLT);
   
   // Step 3: Map the preprocessed RDLT model to a Petri Net.
-  const outputPnModel = mapToPetriNet(combinedRDLT);
+  const mappingResult = mapToPetriNet(combinedRDLT)
+  const outputPnModel = mappingResult.petriNet;
   
   // console.log(outputPnModel);
-  if(!extend) 
-      return { rdlt: inputRdltModel, preprocess: preprocessedModel, combinedModel: combinedRDLT, petriNet: outputPnModel};
+  if(!extend) {
+    return { 
+      rdlt: inputRdltModel, 
+      preprocess: preprocessedModel, 
+      combinedModel: combinedRDLT, 
+      petriNet: outputPnModel,
+      visualizeConversion: mappingResult.conversionDOT
+    };
+  }
   // Run structural analysis.
-  const structResults = structuralAnalysis(outputPnModel);
-  console.log("Strongly Connected:",structResults.connectivityDetails.stronglyConnected);
-  console.log(`Counted a total of ${structResults.transitionsCount} transitions with:`);
-  console.log(` - Transitions that Correspons to a Check Operation (${structResults.checkTransitions.length})`);
-  console.log(` - Transitions that Corresponds to a Traverse Operation (${structResults.traverseTransitions.length})`);
-  console.log(` - Reset Transitions (${structResults.resetTransitions.length})`);
-  console.log(`Counted a total of ${structResults.placesCount} places with:`);
-  console.log(` - Global Source Place (${structResults.globalSource.length})`);
-  console.log(` - Global Sink Place (${structResults.globalSink.length})`);
-  console.log(` - Auxiliary Places (${structResults.auxiliaryPlaces.length})`);
-  console.log(` - Places that Corresponds to a Checked Arc (${structResults.checkedPlaces.length})`);
-  console.log(` - Places that Corresponds to a Traversed Arc (${structResults.traversedPlaces.length})`);
-  console.log(` - Consensus Places (${structResults.consensusPlaces.length})`);
-  console.log(` - Places that Corresponds to an Unconstrained Epsilon Arc (${structResults.unconstrainedPlaces.length})`);
-  console.log(` - Split Places that Corresponds to Checked Arcs (${structResults.splitPlaces.length})`);
-  console.log(structResults.connectivityDetails.report);
+  const structuralResult = structuralAnalysis(outputPnModel);
+  // console.log("Strongly Connected:",structuralResult.connectivityDetails.stronglyConnected);
+  // console.log(`Counted a total of ${structuralResult.transitionsCount} transitions with:`);
+  // console.log(` - Transitions that Corresponds to a Check Operation (${structuralResult.checkTransitions.length})`);
+  // console.log(` - Transitions that Corresponds to a Traverse Operation (${structuralResult.traverseTransitions.length})`);
+  // console.log(` - Reset Transitions (${structuralResult.resetTransitions.length})`);
+  // console.log(`Counted a total of ${structuralResult.placesCount} places with:`);
+  // console.log(` - Global Source Place (${structuralResult.globalSource.length})`);
+  // console.log(` - Global Sink Place (${structuralResult.globalSink.length})`);
+  // console.log(` - Auxiliary Places (${structuralResult.auxiliaryPlaces.length})`);
+  // console.log(` - Places that Corresponds to a Checked Arc (${structuralResult.checkedPlaces.length})`);
+  // console.log(` - Places that Corresponds to a Traversed Arc (${structuralResult.traversedPlaces.length})`);
+  // console.log(` - Consensus Places (${structuralResult.consensusPlaces.length})`);
+  // console.log(` - Places that Corresponds to an Unconstrained Epsilon Arc (${structuralResult.unconstrainedPlaces.length})`);
+  // console.log(` - Split Places that Corresponds to Checked Arcs (${structuralResult.splitPlaces.length})`);
+  // console.log(structuralResult.connectivityDetails.report);
 
-  console.log("Structural Issues:");
-  structResults.issues.forEach(issue => console.log(" -", issue));
+  // console.log("Structural Issues:");
+  // structuralResult.issues.forEach(issue => console.log(" -", issue));
   
   // Run behavioral analysis.
-  const result = behavioralAnalysis(outputPnModel, 1000);
+  const behavioralResult = behavioralAnalysis(outputPnModel, 1000);
 
-  // console.log(result.simulationResults[0]);
-  console.log("Firing Sequence Count:",result.simulationResults.length);
+  // console.log(behavioralResult.simulationResults[0]);
+  console.log("Firing Sequence Count:",behavioralResult.simulationResults.length);
 
   console.log("Firing Sequence Simulated: ");
-  for(const firingSequence of result.simulationResults){
+  for(const firingSequence of behavioralResult.simulationResults){
     let fireseq = [];
     let activities = [];
     let activityCount = 0;
@@ -72,7 +80,7 @@ export function convert(rdltInput, extend = true) {
       let activity = [];
       firingSequence[i].firedTransitions.forEach(transitionId => {
         if(outputPnModel.transitions[transitionId].activities) 
-          activity.push(outputPnModel.transitions[transitionId].activities.split('),'));
+          activity.push(outputPnModel.transitions[transitionId].activities);
       });
       if(activity.length!==0) {
         activityCount++;
@@ -82,27 +90,22 @@ export function convert(rdltInput, extend = true) {
       //   fireseq += " → "; // Only add arrow if it's not the second to last element
       // }
     }
-    console.log("Firing Seqence",result.simulationResults.indexOf(firingSequence)+1);
-    console.log(fireseq);
-    console.log(activities);
+    // console.log("Firing Seqence",behavioralResult.simulationResults.indexOf(firingSequence)+1);
+    // console.log(fireseq);
+    // console.log(activities);
     // console.log("Activity Extraction");
     // const activityExtraction = activities.join(',');
     // console.log(activityExtraction);
-    // const simulation = {
-    //   firingSequence: fireseq,
-    //   activityExtraction: activityExtraction
-    // };
-    // firingSequence.push(simulation);
-    result.perSequenceResults[result.simulationResults.indexOf(firingSequence)].firingSequence = fireseq;
-    result.perSequenceResults[result.simulationResults.indexOf(firingSequence)].activityExtraction = activities;
+    behavioralResult.perSequenceResults[behavioralResult.simulationResults.indexOf(firingSequence)].firingSequence = fireseq;
+    behavioralResult.perSequenceResults[behavioralResult.simulationResults.indexOf(firingSequence)].activityExtraction = activities;
   }
 
   // console.log(result.simulationResults);
 
-  console.log(result.perSequenceResults);
-  console.log("Overall Liveness: ",result.overallLiveness);
-  console.log("Overall Termination: ",result.overallTermination);
-  console.log("Output PN Soundness: ",result.overallSoundness);
+  // console.log(behavioralResult.perSequenceResults);
+  // console.log("Overall Liveness: ",behavioralResult.overallLiveness);
+  // console.log("Overall Termination: ",behavioralResult.overallTermination);
+  // console.log("Output PN Soundness: ",behavioralResult.overallSoundness);
 
   // // Step 4: Validate Soundness Preservation.
   const rdltSoundness = checkRDLTSoundness(inputRdltModel);
@@ -111,12 +114,17 @@ export function convert(rdltInput, extend = true) {
   // const soundnessPreserved = (rdltSoundness.toLowerCase() === result.overallSoundness.toLowerCase());
   // console.log(`RDLT soundness: ${rdltSoundness}, PN soundness: ${result.overallSoundness}`);
   
-  return { rdlt: inputRdltModel, preprocess: preprocessedModel, combinedModel: combinedRDLT,
-    petriNet: outputPnModel, soundness: pnSoundness };
+  return { 
+    rdlt: inputRdltModel,
+    preprocess: preprocessedModel, 
+    combinedModel: combinedRDLT,
+    petriNet: outputPnModel, 
+    structAnalysis: structuralResult, 
+    behaviorAnalysis: behavioralResult,
+    visualizeConversion: mappingResult.conversionDOT
+  };
 }
 
-
-// Moved combineLevels function:
 function combineLevels(level1, level2) {
   // Create a new RDLT model to hold the combined levels.
   const combinedModel = new RDLTModel();

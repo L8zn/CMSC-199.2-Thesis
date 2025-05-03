@@ -33,6 +33,10 @@ export class RDLTModel {
     return this.nodes[id];
   }
 
+  clone() {
+    return new RDLTModel(this.nodes, this.edges);
+  }
+
   /**
    * Returns the set of vertices that belong to the RBS induced by the given center nodeId.
    * According to Malinao 2023, vertices belonging to the RBS are:
@@ -320,8 +324,14 @@ static hasAnySiblingPair(processes) {
     const nonSiblings = this.hasNonSiblingPaths(vertex);
     const hasAbstract = this.hasAbstractArc(vertex);
     const hasLoop = this.hasLoopingArc(vertex.id);
-    console.log(`${vertex.id}: siblingsOrJoin=${siblings}, nonSiblings=${nonSiblings}, abstract=${hasAbstract}, loop=${hasLoop}`);
-    return siblings || nonSiblings || hasAbstract || hasLoop;
+    // console.log(`${vertex.id}: siblingsOrJoin=${siblings}, nonSiblings=${nonSiblings}, areAbstractArcs=${hasAbstract}, hasALoopingProcess=${hasLoop}`);
+    return {
+      case1: siblings || nonSiblings || hasAbstract || hasLoop,
+      isSiblingsOrJoin: siblings,
+      isNonSiblings: nonSiblings,
+      hasAbstract: hasAbstract,
+      hasLoop: hasLoop
+    };
   }
 
   /**

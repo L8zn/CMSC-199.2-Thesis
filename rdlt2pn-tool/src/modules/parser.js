@@ -1,7 +1,7 @@
 // modules/parser.js
 /* eslint-disable max-lines-per-function */
 
-export function parseRDLT (input) {
+export function parseRDLT (input, extend = true) {
   let raw;
   try {
     raw = typeof input === 'string' ? JSON.parse(input) : input;
@@ -12,7 +12,7 @@ export function parseRDLT (input) {
   // ---------- rudimentary shape ------------------------------------------------
   if (!raw || !Array.isArray(raw.vertices) || !Array.isArray(raw.edges)) {
     throw new Error(
-      'RDLT must have the shape { vertices:[...], edges:[...] } – ' +
+      'RDLT must have the shape { vertices:[...], edges:[...] } - ' +
       'arrays are required.'
     );
   }
@@ -74,7 +74,7 @@ export function parseRDLT (input) {
     }
     // loop?
     if (from === to) {
-      warnings.push(`${ctx}: self-loops are unusual – make sure this is intended.`);
+      warnings.push(`${ctx}: self-loops are unusual - make sure this is intended.`);
     }
     // C must be a string (ϵ allowed)
     if (typeof C !== 'string') {
@@ -89,6 +89,18 @@ export function parseRDLT (input) {
     outgoing[from].push({ to,   C, L });
     incoming[to].push   ({ from, C, L });
   });
+
+  // ---------- Check for valid source and sink nodes -----------------------------
+  // Get source places (no incoming arcs) and sink places (no outgoing arcs)
+  const sourceNodes = Object.keys(vertices).filter(id => incoming[id].length === 0);
+  const sinkNodes = Object.keys(vertices).filter(id => outgoing[id].length === 0);
+
+  if (extend && sourceNodes.length === 0) {
+    throw new Error('No valid source node found. Please ensure at least one source node exists.');
+  }
+  if (extend && sinkNodes.length === 0) {
+    throw new Error('No valid sink node found. Please ensure at least one sink node exists.');
+  }
 
   // ---------- extra structural sanity checks -----------------------------------
   // Every RBS centre must have at least one owned controller (C=ϵ to a 'c')

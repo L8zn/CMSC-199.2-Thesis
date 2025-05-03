@@ -411,11 +411,12 @@ function computeLuv(R, B, inBridge, abstractPath, allRbsEdgeSets) {
   // console.log("candidates:",candidates);
   const distinctPCAs = filterOverlappingPCAs(candidates);
   // console.log("distinctPCAs:",[...distinctPCAs]);
-  const SumDistinctPCAs = [...distinctPCAs].reduce((sum, arc) => sum + arc.L, 0);
+  // const SumDistinctPCAs = [...distinctPCAs].reduce((sum, arc) => sum + arc.L, 0);
+  const minDistinctPCA = Math.min(...[...distinctPCAs].map(arc => arc.L));
   // console.log("SumDistinctPCAs:",[...distinctPCAs].reduce((sum, arc) => sum + arc.L, 0));
   // 4) done
   if (candidates.length === 0) return 1;
-  return Math.min(inBridge.L,SumDistinctPCAs);
+  return Math.min(inBridge.L,minDistinctPCA);
 }
 
 /**
