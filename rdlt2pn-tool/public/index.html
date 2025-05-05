@@ -11,7 +11,6 @@
 </head>
 <body>
   <div id="inputSection" class="section">
-    <!-- <h2>JSON RDLT Input</h2> -->
     <textarea id="jsonInput" placeholder="Paste JSON RDLT input here...">
 {
   "vertices": [
@@ -148,9 +147,9 @@
           alert("Conversion failed: " + data.error);
           return;
         }
+        if(data.warnings.length !== 0) alert(`Warnings: ${data.warnings}`);
         document.getElementById('outputSection').style.display = 'block';
 
-        // console.log(data.rdltModel);
         pnOutputDot = data.pnDot;
         rdltInputDot = data.rdltDot;
         structReport = data.structReport;

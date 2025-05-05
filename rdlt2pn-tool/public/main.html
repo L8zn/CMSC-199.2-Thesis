@@ -3,43 +3,109 @@
 <head>
   <meta charset="UTF-8">
   <title>RDLT to Petri Net Converter</title>
+  <!-- Load D3 and d3-graphviz via CDN -->
+  <script src="https://d3js.org/d3.v7.js"></script>
+  <script src="https://unpkg.com/@hpcc-js/wasm@2.16.1/dist/graphviz.umd.js"></script>
+  <script src="https://unpkg.com/d3-graphviz@5/build/d3-graphviz.js"></script>
   <link rel="stylesheet" href="main.css">
 </head>
 <body>
-  <h1>RDLT to Petri Net Converter</h1>
-  
-  <div class="section">
-    <h2>JSON RDLT Input</h2>
+  <div id="inputSection" class="section">
     <textarea id="jsonInput" placeholder="Paste JSON RDLT input here...">
+{
+  "vertices": [
+    { "id": "x1", "type": "b", "label": "", "M": 0 },
+    { "id": "y1", "type": "c", "label": "", "M": 0 },
+    { "id": "y2", "type": "c", "label": "", "M": 0 },
+    { "id": "y3", "type": "c", "label": "", "M": 0 },
+    { "id": "x2", "type": "e", "label": "", "M": 1 },
+    { "id": "y4", "type": "c", "label": "", "M": 0 },
+    { "id": "y5", "type": "c", "label": "", "M": 0 }
+  ],  
+  "edges": [
+    { "from": "x1", "to": "y1", "C": "a", "L": 1 },
+    { "from": "x1", "to": "y2", "C": "b", "L": 1 },
+    { "from": "y2", "to": "y3", "C": "d", "L": 1 },
+    { "from": "y1", "to": "x2", "C": "ϵ", "L": 2 },
+    { "from": "y2", "to": "x2", "C": "send m", "L": 2 },   
+    { "from": "x2", "to": "y5", "C": "ϵ", "L": 1 },
+    { "from": "x2", "to": "y4", "C": "ϵ", "L": 1 },
+    { "from": "y4", "to": "y5", "C": "ϵ", "L": 1 },
+    { "from": "y5", "to": "y3", "C": "send n, p", "L": 1 }
+  ]
+}
     </textarea>
-  </div>
-  
-  <button id="convertBtn">Convert</button>
-  <button id="convertBtn">Convert</button>
+    <button id="inputBtn">Input</button>
+    <pre id="dotOutput" style="display: none;"></pre>
+  </div>  
   
   <div id="outputSection" class="section" style="display:none;">
-    <h2>Visualization</h2>
-    <h3>Input RDLT</h3>
-    <div id="inputRDLT" class="graph"></div>
-    <h3>Preprocessed RDLT</h3>
-    <div id="preproRDLT" class="graph"></div>
-    <h3>Output PN</h3>
-    <div id="outputPN" class="graph"></div>
-    <h2>Generated Petri Net Model (DOT Format)</h2>
-    <pre id="dotOutput"></pre>
-    <div>
-      <button class="exportBtn" data-format="svg">Export as SVG</button>
-      <button class="exportBtn" data-format="png">Export as PNG</button>
-      <button class="exportBtn" data-format="dot">Export as DOT</button>
+    <div id="actionSection">
+      <button id="inputRDLT">Input RDLT</button>
+      <button id="outputPN">Output PN</button>
+      <button class="simulateBtn" simulation="conversion">Simulate Conversion Process</button>
+      <button class="simulateBtn" simulation="firingsequence">Simulate and Analyze</button>    
+    </div>
+    <div id="graphContainer" class="graph-container">
+      <h3 id="graphTitle" class="graph-title">[Your Graph Title Here]</h3>
+      <div id="simSubtitle" class="sim-subtitle" style="display:none;">Step 0 of 0</div>
+      <div id="simulationControls" class="simulation-controls" style="display:none;">
+        <button id="resetSimBtn">Reset</button>
+        <button id="prevBtn">Prev</button>
+        <button id="nextBtn">Next</button>
+        <button id="endSimBtn">End</button>
+        <button id="toggleLogBtn">Logs</button>
+      </div>
+      <div class="export-container">
+        <button id="exportBtn" type="button">Export ▼</button>
+        <div id="exportSection" class="export-menu">
+          <button class="exportOptBtn" data-format="svg">SVG</button>
+          <button class="exportOptBtn" data-format="png">PNG</button>
+          <button class="exportOptBtn" data-format="dot">DOT</button>
+        </div>
+      </div>  
+      <div id="d3graph" class="graph"></div>
+      <div id="logSection" class="log-panel" style="display:none;">
+        <details open>
+          <summary>Simulation Logs</summary>
+          <pre id="simulationLog"></pre>
+        </details>
+      </div>
     </div>
   </div>
   
-  <div id="reportSection" class="section" style="display:none;">
-    <h2>Structural & Behavioral Analysis Report</h2>
-    <pre id="reportOutput"></pre>
+  <div id="reportSection" style="display:none;">
+    <div class="report-panels">
+      <!-- 1) left column: firing sequences -->
+      <div class="report-panel firing-panel">
+        <details open>
+          <summary>Simulated Firing Sequences</summary>
+          <div id="firingSequencesOutput"></div>
+        </details>
+      </div>
+    
+      <!-- 2) middle column: structural -->
+      <div class="report-panel struct-panel">
+        <details open>
+          <summary>Structural Analysis Report</summary>
+          <div id="structReportOutput">
+            
+          </div>
+        </details>
+      </div>
+    
+      <!-- 3) right column: behavioral -->
+      <div class="report-panel behave-panel">
+        <details open>
+          <summary>Behavioral Analysis Report</summary>
+          <div id="behaveReportOutput">
+
+          </div>
+        </details>
+      </div>
+    </div>
   </div>
   
-  <script>
-  </script>
+  <script type="module" src="/rdlt2pn-tool/public/main.mjs"></script>
 </body>
 </html>

@@ -851,3 +851,52 @@ export function preprocessRDLT(rdltGraph, extend = true) {
   };
 }
 
+export function combineLevels(level1, level2) {
+  // Create a new RDLT model to hold the combined levels.
+  const combinedModel = new RDLTModel();
+
+  // First, add all nodes and edges from level1.
+  Object.values(level1.nodes).forEach(node => {
+    combinedModel.addNode({ ...node });
+  });
+  level1.edges.forEach(edge => {
+    combinedModel.addEdge({ ...edge });
+  });
+
+  // Then, for each level2 model (each corresponding to a reset-bound subsystem),
+  // rename the nodes and edges (for example, by appending an apostrophe)
+  // and add them to the combined model.
+  for (const centerId in level2) {
+    const level2Model = level2[centerId];
+    // Optionally, store the group info:
+    combinedModel.rbsGroups = combinedModel.rbsGroups || {};
+    combinedModel.rbsGroups[centerId] = [];
+
+    // Rename and add nodes.
+    Object.values(level2Model.nodes).forEach(node => {
+      const renamedNode = {
+        ...node,
+        id: node.id + "'",
+        label: node.label ? node.label + "'" : "",
+        // Mark if this node is the center of the RBS:
+        center: (node.id === centerId),
+        rbsGroup: centerId
+      };
+      combinedModel.addNode(renamedNode);
+      combinedModel.rbsGroups[centerId].push(node.id);
+    });
+
+    // Rename and add edges.
+    level2Model.edges.forEach(edge => {
+      const renamedEdge = {
+        ...edge,
+        from: edge.from + "'",
+        to: edge.to + "'",
+        rbsGroup: centerId
+      };
+      combinedModel.addEdge(renamedEdge);
+    });
+  }
+
+  return combinedModel;
+}

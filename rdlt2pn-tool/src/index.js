@@ -25,61 +25,43 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.post('/api/convert', (req, res) => {
   try {
     const rdltInput = req.body.input; // JSON string from client
-    // console.log(JSON.parse(rdltInput));
-    // Call your conversion function (assumes it returns an object with petriNet and soundness properties)
-    const conversionResult = convert(rdltInput);
-    const pnDOT = exportPNToDOT(conversionResult.petriNet);
-    const rdltDOT = exportRDLTToDOT(conversionResult.rdlt);
-    const combRDLT = exportRDLTToDOT(conversionResult.combinedModel);
-    // const structuralResult = conversionResult.structAnalysis;
-    // let sReport = ``;
-    // sReport += `Strongly Connected: ${structuralResult.connectivityDetails.stronglyConnected}\n`;
-    // sReport += `Counted a total of ${structuralResult.transitionsCount} transitions with:\n`;
-    // sReport += ` - Transitions that Corresponds to a Check Operation (${structuralResult.checkTransitions.length})\n`;
-    // sReport += ` - Transitions that Corresponds to a Traverse Operation (${structuralResult.traverseTransitions.length})\n`;
-    // sReport += ` - Reset Transitions (${structuralResult.resetTransitions.length})\n`;
-    // sReport += `Counted a total of ${structuralResult.placesCount} places with:\n`;
-    // sReport += ` - Global Source Place (${structuralResult.globalSource.length})\n`;
-    // sReport += ` - Global Sink Place (${structuralResult.globalSink.length})\n`;
-    // sReport += ` - Auxiliary Places (${structuralResult.auxiliaryPlaces.length})\n`;
-    // sReport += ` - Places that Corresponds to a Checked Arc (${structuralResult.checkedPlaces.length})\n`;
-    // sReport += ` - Places that Corresponds to a Traversed Arc (${structuralResult.traversedPlaces.length})\n`;
-    // sReport += ` - Consensus Places (${structuralResult.consensusPlaces.length})\n`;
-    // sReport += ` - Places that Corresponds to an Unconstrained Epsilon Arc (${structuralResult.unconstrainedPlaces.length})\n`;
-    // sReport += ` - Split Places that Corresponds to Checked Arcs (${structuralResult.splitPlaces.length})\n`;
-    // sReport += structuralResult.connectivityDetails.report +"\n";
-    // sReport += "Structural Issues:\n";
-    // structuralResult.issues.forEach(issue => sReport += ` - ${issue}`);
-    
-    conversionResult.visualizeConversion.forEach( step => {
-      if(conversionResult.visualizeConversion.indexOf(step)===0){
+    const { data, warnings, error } = convert(rdltInput);
+    if(error) {
+      // console.error('Parsing failed:', error);
+      alert(`Error: ${error}`);
+      console.error("Parsing error:", error);
+      res.status(500).json({ error: 'Parsing failed' });
+    } else {
+      // console.log('Conversion succeeded:', data);
+
+      const pnDOT = exportPNToDOT(data.petriNet);
+      const rdltDOT = exportRDLTToDOT(data.rdlt);
+      const combRDLT = exportRDLTToDOT(data.combinedModel);
+      
+      data.visualizeConversion.forEach( step => {
         step.dot = step.dotLines.join('');
-      }
-      else step.dot = step.dotLines.join('');
-    });
-
-    let fireSeqViz = [];
-    conversionResult.behaviorAnalysis.simulationResults.forEach( fireseq => {
-      let seqDOTList = []; 
-      fireseq.forEach( state => {
-        conversionResult.petriNet.updateState(state);
-        seqDOTList.push(exportPNToDOT(conversionResult.petriNet));
-        conversionResult.petriNet.revertState;
       });
-      fireSeqViz.push(seqDOTList);
-    });
-    // conversionResult.behaviorAnalysis.
-
-    res.json({ 
-      rdltModel: conversionResult.rdlt.toJSON(),
-      rdltDot: rdltDOT, 
-      preproDot: combRDLT, 
-      pnDot: pnDOT, 
-      structReport: conversionResult.structAnalysis,
-      behaveReport: conversionResult.behaviorAnalysis, 
-      convertViz: conversionResult.visualizeConversion,
-      fireSeqViz: fireSeqViz
-    });
+      let fireSeqViz = [];
+      data.behaviorAnalysis.simulationResults.forEach( fireseq => {
+        let seqDOTList = []; 
+        fireseq.forEach( state => {
+          data.petriNet.updateState(state);
+          seqDOTList.push(exportPNToDOT(data.petriNet));
+          data.petriNet.revertState;
+        });
+        fireSeqViz.push(seqDOTList);
+      });
+      res.json({ 
+        rdltDot: rdltDOT, 
+        preproDot: combRDLT, 
+        pnDot: pnDOT, 
+        structReport: data.structAnalysis,
+        behaveReport: data.behaviorAnalysis, 
+        convertViz: data.visualizeConversion,
+        fireSeqViz: fireSeqViz,
+        warnings: warnings
+      });
+    }
   } catch (error) {
     console.error("Conversion error:", error);
     res.status(500).json({ error: 'Conversion failed' });
@@ -753,45 +735,45 @@ app.listen(port, () => {
 //     ]
 //   });
 
-//   const pisowifi = JSON.stringify({
-//     vertices: [
-//       { id: "b1", type: "b", label: "AccessPoint", M: 0 },
-//       { id: "c1", type: "c", label: "ConnectToAP", M: 0 },
-//       { id: "b2", type: "b", label: "UserPortal", M: 0 },
-//       { id: "c2", type: "c", label: "NewSession", M: 0 },
-//       { id: "c3", type: "c", label: "StartSession", M: 0 },
-//       { id: "b3", type: "b", label: "CoinSlot", M: 1 },
-//       { id: "c4", type: "c", label: "InsertCoin", M: 0 },
-//       { id: "c5", type: "c", label: "CoinCheck", M: 0 },
-//       // { id: "c6", type: "c", label: "EjectCoin", M: 0 },
-//       { id: "c7", type: "c", label: "AcceptCoin", M: 0 },
-//       { id: "c8", type: "c", label: "AddTime", M: 0 },
-//       { id: "e1", type: "e", label: "WifiManager", M: 1 },
-//       { id: "c9", type: "c", label: "TrackSession", M: 0 },
-//       // { id: "c10", type: "c", label: "PauseSession", M: 0 },
-//       { id: "c11", type: "c", label: "EndSession", M: 0 }
-//     ],
-//     edges: [
-//       { from: "b1", to: "c1", C: "ϵ", L: 1 },
-//       { from: "c1", to: "b2", C: "isConnected", L: 1 },
-//       { from: "b2", to: "c2", C: "ϵ", L: 2 },
-//       { from: "b2", to: "c3", C: "ϵ", L: 2 },
-//       { from: "c2", to: "b3", C: "isCurrentUser", L: 2 },
-//       { from: "c3", to: "e1", C: "hasTime", L: 2 },
-//       { from: "b3", to: "c4", C: "ϵ", L: 1 },
-//       { from: "b3", to: "c5", C: "ϵ", L: 1 },
-//       { from: "c4", to: "c5", C: "isInserted", L: 1 },
-//       // { from: "c5", to: "c6", C: "isInvalidCoin", L: 1 },
-//       // { from: "c6", to: "c11", C: "ϵ", L: 1 },
-//       { from: "c5", to: "c7", C: "isValidCoin", L: 1 },
-//       { from: "c7", to: "c8", C: "ϵ", L: 1 },
-//       { from: "c8", to: "e1", C: "isAdded", L: 1 },
-//       { from: "e1", to: "c9", C: "ϵ", L: 1 },
-//       // { from: "c9", to: "c10", C: "userExit", L: 1 },
-//       { from: "c9", to: "c11", C: "noTime", L: 1 },
-//       // { from: "c10", to: "b2", C: "ϵ", L: 1 }
-//     ]
-//   });
+  // const pisowifi = JSON.stringify({
+  //   vertices: [
+  //     { id: "b1", type: "b", label: "AccessPoint", M: 0 },
+  //     { id: "c1", type: "c", label: "ConnectToAP", M: 0 },
+  //     { id: "b2", type: "b", label: "UserPortal", M: 0 },
+  //     { id: "c2", type: "c", label: "NewSession", M: 0 },
+  //     { id: "c3", type: "c", label: "StartSession", M: 0 },
+  //     { id: "b3", type: "b", label: "CoinSlot", M: 1 },
+  //     { id: "c4", type: "c", label: "InsertCoin", M: 0 },
+  //     { id: "c5", type: "c", label: "CoinCheck", M: 0 },
+  //     // { id: "c6", type: "c", label: "EjectCoin", M: 0 },
+  //     { id: "c7", type: "c", label: "AcceptCoin", M: 0 },
+  //     { id: "c8", type: "c", label: "AddTime", M: 0 },
+  //     { id: "e1", type: "e", label: "WifiManager", M: 1 },
+  //     { id: "c9", type: "c", label: "TrackSession", M: 0 },
+  //     // { id: "c10", type: "c", label: "PauseSession", M: 0 },
+  //     { id: "c11", type: "c", label: "EndSession", M: 0 }
+  //   ],
+  //   edges: [
+  //     { from: "b1", to: "c1", C: "ϵ", L: 1 },
+  //     { from: "c1", to: "b2", C: "isConnected", L: 1 },
+  //     { from: "b2", to: "c2", C: "ϵ", L: 2 },
+  //     { from: "b2", to: "c3", C: "ϵ", L: 2 },
+  //     { from: "c2", to: "b3", C: "isCurrentUser", L: 2 },
+  //     { from: "c3", to: "e1", C: "hasTime", L: 2 },
+  //     { from: "b3", to: "c4", C: "ϵ", L: 1 },
+  //     { from: "b3", to: "c5", C: "ϵ", L: 1 },
+  //     { from: "c4", to: "c5", C: "isInserted", L: 1 },
+  //     // { from: "c5", to: "c6", C: "isInvalidCoin", L: 1 },
+  //     // { from: "c6", to: "c11", C: "ϵ", L: 1 },
+  //     { from: "c5", to: "c7", C: "isValidCoin", L: 1 },
+  //     { from: "c7", to: "c8", C: "ϵ", L: 1 },
+  //     { from: "c8", to: "e1", C: "isAdded", L: 1 },
+  //     { from: "e1", to: "c9", C: "ϵ", L: 1 },
+  //     // { from: "c9", to: "c10", C: "userExit", L: 1 },
+  //     { from: "c9", to: "c11", C: "noTime", L: 1 },
+  //     // { from: "c10", to: "b2", C: "ϵ", L: 1 }
+  //   ]
+  // });
 
 //   // Convert RDLT to PN. 
 //   visualize(convert(rdltInput,true),"test"); // Empty RDLT input test

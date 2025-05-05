@@ -1,5 +1,4 @@
 // src/modules/behavioralAnalysis.js
-import { PNModel } from '../models/pnModel.js';
 
 /**
  * Returns an object mapping each place's id to its initial token count.
